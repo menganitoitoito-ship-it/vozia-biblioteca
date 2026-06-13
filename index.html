@@ -181,6 +181,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
   box-shadow:0 10px 20px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.05);
   border-left:1px solid rgba(255,255,255,.08);
   width:100%;
+  min-width:0;
 }
 .book-card:hover{
   border-color:var(--gold);
@@ -223,6 +224,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
   flex-direction:column;
   justify-content:flex-start;
   gap:4px;
+  min-width:0;
 }
 .book-card .card-title{
   font-size:12px;
@@ -2256,7 +2258,7 @@ function speakParagraphWebSpeech(text, session) {
       resolve();
       return;
     }
-    window.speechSynthesis.cancel();
+
 
     const voiceId = document.getElementById('reader-voice').value;
     const synth = window.speechSynthesis;
@@ -2962,9 +2964,9 @@ function loadVoicesForProvider(){
     let attempts=0;
     const tryLoad=()=>{
       const raw=window.speechSynthesis?.getVoices()||[];
-      const hasGoogle=raw.some(v=>v.name.toLowerCase().includes('google'));
+      const esCount=raw.filter(v=>v.lang.toLowerCase().startsWith('es')).length;
       attempts++;apply();
-      if(!hasGoogle&&attempts<8) setTimeout(tryLoad,500);
+      if(esCount<=2&&attempts<15) setTimeout(tryLoad,500);
     };
     if(window.speechSynthesis) window.speechSynthesis.onvoiceschanged=apply;
     tryLoad();
