@@ -82,8 +82,8 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 .sidebar-scroll::-webkit-scrollbar{width:3px}
 .sidebar-scroll::-webkit-scrollbar-thumb{background:var(--s4);border-radius:2px}
 .nav-section{padding:12px 16px 4px;font-size:9px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--t1);opacity:0.8}
-.nav-item{display:flex;align-items:center;gap:10px;padding:9px 16px;border-radius:0;cursor:pointer;transition:all .15s;color:var(--t2);font-size:13px;font-weight:500;border-left:2px solid transparent;position:relative}
-.nav-item:hover{color:var(--t1);background:var(--b1)}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 16px;border-radius:0;cursor:pointer;transition:all .15s;color:rgba(255,255,255,0.82);font-size:13px;font-weight:500;border-left:2px solid transparent;position:relative}
+.nav-item:hover{color:#ffffff;background:var(--b1)}
 .nav-item.active{color:var(--gold2);background:var(--gold-b);border-left-color:var(--gold)}
 .nav-item .ni-icon{width:18px;text-align:center;font-size:14px;flex-shrink:0}
 .nav-item .ni-badge{margin-left:auto;font-size:10px;background:var(--s4);color:var(--t3);padding:1px 6px;border-radius:10px;font-family:var(--mono)}
@@ -595,6 +595,12 @@ input[type=range]{accent-color:var(--gold);cursor:pointer;width:100%}
   }
   .topbar-title{display:none}
   .reader-sidebar{display:none}
+  /* Topbar: ocultar etiquetas de texto en móvil para que no se corte */
+  .topbar-btn-label{display:none}
+  #btn-export{margin-right:4px!important;padding:4px 7px!important}
+  #btn-add{padding:4px 7px!important}
+  .book-count{display:none}
+  .topbar-right{gap:4px}
   .reader-text{padding:20px 16px;font-size:17px;line-height:1.9}
   .reader-controls{
     gap:6px;padding:10px 12px;
@@ -615,6 +621,7 @@ input[type=range]{accent-color:var(--gold);cursor:pointer;width:100%}
   /* Grid libros: 2 columnas fijas, portadas sin solapamientos */
   #books-grid{
     grid-template-columns:repeat(2,1fr);
+    justify-content:stretch;
     gap:16px;
     padding:16px 16px calc(72px + env(safe-area-inset-bottom));
     align-items:start;
@@ -734,10 +741,10 @@ input[type=range]{accent-color:var(--gold);cursor:pointer;width:100%}
       <button class="search-clear" id="search-clear" style="display:none" onclick="clearSearch()">✕</button>
     </div>
     <div class="topbar-right">
-      <button class="btn-ghost" style="padding:4px 10px;height:28px;display:flex;align-items:center;font-size:11px;gap:5px;margin-right:4px" onclick="document.getElementById('file-input').click()">+ Añadir</button>
+      <button class="btn-ghost" id="btn-add" style="padding:4px 10px;height:28px;display:flex;align-items:center;font-size:11px;gap:5px;margin-right:4px" onclick="document.getElementById('file-input').click()">+ <span class="topbar-btn-label">Añadir</span></button>
       <button class="btn-ghost" id="btn-export" style="padding:4px 10px;height:28px;display:flex;align-items:center;font-size:11px;gap:5px;margin-right:8px;border-color:var(--gold);color:var(--gold)" onclick="exportLibraryPage()" title="Exportar biblioteca como página web">
         <svg viewBox="0 0 16 16" fill="currentColor" style="width:12px;height:12px"><path d="M8 1a.75.75 0 0 1 .75.75v6.19l1.97-1.97a.75.75 0 1 1 1.06 1.06L8.53 10.28a.75.75 0 0 1-1.06 0L4.22 7.03a.75.75 0 1 1 1.06-1.06L7.25 7.94V1.75A.75.75 0 0 1 8 1zM2 13.25a.75.75 0 0 1 .75-.75h10.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75z"/></svg>
-        Exportar
+        <span class="topbar-btn-label">Exportar</span>
       </button>
       <span class="book-count" id="book-count"></span>
       <div class="view-toggle">
@@ -2374,6 +2381,8 @@ async function readCurrentChapter(){
 }
 
 function stopReading(){
+  // Guardar posición actual ANTES de cancelar, para poder reanudar desde aquí
+  saveParaPosition();
   isCurrentlyReading = false;
   currentReadSession++;
   activeUtterance = null;
@@ -2962,14 +2971,33 @@ function loadVoicesForProvider(){
   if(p.voicesSource==='webspeech'){
     const apply=()=>{voices=loadWebSpeechVoices();populateVoiceSelects();renderVoiceGrid();};
     let attempts=0;
+    let lastCount=-1;
     const tryLoad=()=>{
       const raw=window.speechSynthesis?.getVoices()||[];
       const esCount=raw.filter(v=>v.lang.toLowerCase().startsWith('es')).length;
-      attempts++;apply();
-      if(esCount<=2&&attempts<15) setTimeout(tryLoad,500);
+      attempts++;
+      // Aplicar siempre que haya cambio o primeras veces
+      if(raw.length!==lastCount){lastCount=raw.length;apply();}
+      // Forzar init del motor TTS en móvil con dummy real
+      if(attempts===1 && raw.length<=3) {
+        try{
+          let dummy = new SpeechSynthesisUtterance(' ');
+          dummy.volume = 0;dummy.rate=10;
+          window.speechSynthesis.speak(dummy);
+          setTimeout(()=>{window.speechSynthesis.cancel();},200);
+        }catch(e){}
+      }
+      // Seguir intentando si pocas voces y no demasiados intentos
+      if(esCount<=2&&attempts<25) setTimeout(tryLoad,600);
+      else if(attempts<5) setTimeout(tryLoad,800);
     };
-    if(window.speechSynthesis) window.speechSynthesis.onvoiceschanged=apply;
+    if(window.speechSynthesis){
+      window.speechSynthesis.onvoiceschanged=()=>{apply();};
+    }
     tryLoad();
+    // Segundo intento tras 2s para capturar voces que cargan tarde (iOS Safari)
+    setTimeout(apply, 2000);
+    setTimeout(apply, 4000);
   } else if(p.voicesSource==='api'){
     if(apiKeys[currentProvider]) loadVoices();
     else{voices=JSON.parse(localStorage.getItem('voz_voices_'+currentProvider)||'[]');populateVoiceSelects();}
