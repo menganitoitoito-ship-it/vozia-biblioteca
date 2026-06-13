@@ -1,7 +1,7 @@
 // Audioteka Service Worker — v2
 // Handles: offline caching, background audio keep-alive, push notifications
 
-const CACHE_NAME = 'audioteka-v3';
+const CACHE_NAME = 'audioteka-v4';
 
 // Assets to precache on install
 const PRECACHE_URLS = [
@@ -58,7 +58,23 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // App shell (same origin) — cache first, then network
+  // App shell (same origin) — network-first for index/HTML pages, cache-first for other static assets
+  const isHtml = url.pathname.endsWith('.html') || url.pathname === '/' || url.pathname.endsWith('/');
+  if (isHtml) {
+    e.respondWith(
+      fetch(e.request)
+        .then(res => {
+          if (res.ok) {
+            const clone = res.clone();
+            caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
+          }
+          return res;
+        })
+        .catch(() => caches.match(e.request))
+    );
+    return;
+  }
+
   e.respondWith(
     caches.match(e.request).then(cached => {
       const networkFetch = fetch(e.request).then(res => {

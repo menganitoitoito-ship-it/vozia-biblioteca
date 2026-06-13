@@ -323,7 +323,9 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 .reader-text h1{font-size:28px}
 .reader-text h2{font-size:22px}
 .reader-text p{margin-bottom:1em;color:rgba(242,240,248,.8)}
-.reader-text p.speaking{background:rgba(212,168,67,.12);border-radius:4px;padding:2px 6px;color:var(--t1)}
+.reader-para{cursor:pointer;transition:background 0.2s,color 0.2s;border-radius:4px;padding:2px 6px}
+.reader-para:hover{background:rgba(255,255,255,0.04)}
+.reader-text .speaking{background:rgba(212,168,67,0.2) !important;color:var(--t1) !important}
 /* ── READER CONTROLS ── */
 .reader-controls{padding:14px 20px;border-top:1px solid var(--b1);background:var(--s1);display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0;padding-bottom:calc(14px + var(--sab))}
 .rc-group{display:flex;align-items:center;gap:6px}
@@ -794,8 +796,13 @@ input[type=range]{accent-color:var(--gold);cursor:pointer;width:100%}
           </div>
           <div class="rc-group">
             <span class="rc-label">Vel:</span>
-            <input type="range" class="rc-input" style="width:70px" min="0.5" max="2" step="0.1" value="1" id="read-speed" oninput="document.getElementById('read-speed-val').textContent=parseFloat(this.value).toFixed(1)+'×'">
+            <input type="range" class="rc-input" style="width:65px" min="0.5" max="2" step="0.1" value="1" id="read-speed" oninput="document.getElementById('read-speed-val').textContent=parseFloat(this.value).toFixed(1)+'×'" onchange="updateReaderAudioSettings()">
             <span class="rc-label" id="read-speed-val" style="font-family:var(--mono)">1.0×</span>
+          </div>
+          <div class="rc-group">
+            <span class="rc-label">Tono:</span>
+            <input type="range" class="rc-input" style="width:65px" min="0.5" max="2" step="0.1" value="1" id="read-pitch" oninput="updatePitchLabel('read-pitch','read-pitch-val')" onchange="updateReaderAudioSettings()">
+            <span class="rc-label" id="read-pitch-val" style="font-family:var(--mono)">normal</span>
           </div>
           <div class="ch-nav">
             <button class="rc-btn" id="prev-ch-btn" onclick="prevChapter()" disabled>⏮</button>
@@ -1171,6 +1178,11 @@ let selectedProviderInModal = currentProvider;
 // Reader/player state
 let epubChapters = [];
 let currentChapter = 0;
+let currentParaIndex = 0;
+let currentTotalParas = 0;
+let isCurrentlyReading = false;
+let currentReadSession = 0;
+let activeUtterance = null;
 let currentEpubKey = '';
 let currentEpubBookId = null;
 let audioElements = {};
@@ -2059,15 +2071,22 @@ function _showChapterSilent(idx){
   if(idx<0||idx>=epubChapters.length) idx=0;
   currentChapter=idx;
   const ch=epubChapters[idx];
-  // Don't overwrite the saved position on initial load
   const area=document.getElementById('reader-text');
+  let paraIdx = 0;
   area.innerHTML=ch.content.split('\n').map(line=>{
     const t=line.trim();
     if(!t) return '';
-    if(t.match(/^#{1,3}\s/)) return `<h2>${escHtml(t.replace(/^#+\s*/,''))}</h2>`;
-    return `<p>${escHtml(t)}</p>`;
+    if(t.match(/^#{1,3}\s/)) return `<h2 class="reader-para" data-index="${paraIdx++}" onclick="jumpToParagraph(${paraIdx-1})">${escHtml(t.replace(/^#+\s*/,''))}</h2>`;
+    return `<p class="reader-para" data-index="${paraIdx++}" onclick="jumpToParagraph(${paraIdx-1})">${escHtml(t)}</p>`;
   }).join('');
-  area.scrollTop=0;
+  currentTotalParas = paraIdx;
+
+  const savedPara = localStorage.getItem('atk_para_' + currentEpubKey + '_' + currentChapter);
+  currentParaIndex = savedPara !== null ? parseInt(savedPara) : 0;
+
+  highlightParagraph(currentParaIndex);
+  restoreScrollPosition();
+
   document.querySelectorAll('.reader-toc-item').forEach((el,i)=>el.classList.toggle('active',i===idx));
   document.getElementById('ch-counter').textContent=(idx+1)+' / '+epubChapters.length;
   document.getElementById('prev-ch-btn').disabled=idx<=0;
@@ -2088,25 +2107,30 @@ function showChapter(idx){
   currentChapter=idx;
   const ch=epubChapters[idx];
   if(currentEpubKey) try{localStorage.setItem('atk_ch_'+currentEpubKey,idx);}catch(e){}
-  // Restaurar scroll guardado para este capítulo
-  restoreScrollPosition();
+
   const area=document.getElementById('reader-text');
+  let paraIdx = 0;
   area.innerHTML=ch.content.split('\n').map(line=>{
     const t=line.trim();
     if(!t) return '';
-    if(t.match(/^#{1,3}\s/)) return `<h2>${escHtml(t.replace(/^#+\s*/,''))}</h2>`;
-    return `<p>${escHtml(t)}</p>`;
+    if(t.match(/^#{1,3}\s/)) return `<h2 class="reader-para" data-index="${paraIdx++}" onclick="jumpToParagraph(${paraIdx-1})">${escHtml(t.replace(/^#+\s*/,''))}</h2>`;
+    return `<p class="reader-para" data-index="${paraIdx++}" onclick="jumpToParagraph(${paraIdx-1})">${escHtml(t)}</p>`;
   }).join('');
-  area.scrollTop=0;
+  currentTotalParas = paraIdx;
+
+  const savedPara = localStorage.getItem('atk_para_' + currentEpubKey + '_' + currentChapter);
+  currentParaIndex = savedPara !== null ? parseInt(savedPara) : 0;
+
+  highlightParagraph(currentParaIndex);
+  restoreScrollPosition();
+
   document.querySelectorAll('.reader-toc-item').forEach((el,i)=>el.classList.toggle('active',i===idx));
   document.getElementById('ch-counter').textContent=(idx+1)+' / '+epubChapters.length;
   document.getElementById('prev-ch-btn').disabled=idx<=0;
   document.getElementById('next-ch-btn').disabled=idx>=epubChapters.length-1;
-  // Update mini player chapter
   if(currentEpubBookId){
     document.getElementById('mp-chapter').textContent=ch.title;
   }
-  // Update progress
   renderBooks();
 }
 
@@ -2116,6 +2140,148 @@ function nextChapter(){ if(currentChapter<epubChapters.length-1) showChapter(cur
 // ═══════════════════════════════════════════
 //  TTS / READING
 // ═══════════════════════════════════════════
+function highlightParagraph(idx) {
+  const paras = document.querySelectorAll('.reader-para');
+  paras.forEach(el => {
+    const pIdx = parseInt(el.getAttribute('data-index'));
+    if (pIdx === idx) {
+      el.classList.add('speaking');
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } else {
+      el.classList.remove('speaking');
+    }
+  });
+}
+
+function saveParaPosition(){
+  if(!currentEpubKey) return;
+  const key='atk_para_'+currentEpubKey+'_'+currentChapter;
+  try{
+    localStorage.setItem(key, currentParaIndex);
+  }catch(e){}
+}
+
+function jumpToParagraph(idx) {
+  currentParaIndex = idx;
+  highlightParagraph(idx);
+  saveParaPosition();
+  if (isCurrentlyReading && currentProvider === 'webspeech') {
+    playWebSpeechParagraphLoop();
+  }
+}
+
+function updateReaderAudioSettings() {
+  if (currentProvider === 'webspeech') {
+    if (isCurrentlyReading) {
+      playWebSpeechParagraphLoop();
+    }
+  } else {
+    const audio = audioElements['reader'];
+    if (audio) {
+      audio.playbackRate = parseFloat(document.getElementById('read-speed').value);
+    }
+  }
+}
+
+async function playWebSpeechParagraphLoop() {
+  currentReadSession++;
+  const session = currentReadSession;
+  isCurrentlyReading = true;
+
+  while (isCurrentlyReading && session === currentReadSession && currentParaIndex < currentTotalParas) {
+    highlightParagraph(currentParaIndex);
+    saveParaPosition();
+
+    const paraEl = document.querySelector(`.reader-para[data-index="${currentParaIndex}"]`);
+    if (!paraEl) {
+      currentParaIndex++;
+      continue;
+    }
+    const text = paraEl.textContent.trim();
+    if (!text) {
+      currentParaIndex++;
+      continue;
+    }
+
+    await speakParagraphWebSpeech(text, session);
+
+    if (session !== currentReadSession || !isCurrentlyReading) {
+      break;
+    }
+    currentParaIndex++;
+  }
+
+  if (isCurrentlyReading && session === currentReadSession && currentParaIndex >= currentTotalParas) {
+    if (currentChapter < epubChapters.length - 1) {
+      currentParaIndex = 0;
+      saveParaPosition();
+      showChapter(currentChapter + 1);
+      readCurrentChapter();
+    } else {
+      stopReading();
+      const book = books.find(b => b.epubKey === currentEpubKey);
+      if (book) { book.status = 'read'; saveBooks(); renderBooks(); updateStats(); }
+    }
+  }
+}
+
+function speakParagraphWebSpeech(text, session) {
+  return new Promise((resolve) => {
+    if (!window.speechSynthesis) {
+      resolve();
+      return;
+    }
+    window.speechSynthesis.cancel();
+
+    const voiceId = document.getElementById('reader-voice').value;
+    const synth = window.speechSynthesis;
+    const allVoices = synth.getVoices();
+    const found = allVoices.find(v => v.voiceURI === voiceId) || null;
+
+    const rate = parseFloat(document.getElementById('read-speed')?.value || '1');
+    const pitch = parseFloat(document.getElementById('read-pitch')?.value || '1');
+
+    const lang = found ? found.lang : 'es-ES';
+    const utt = new SpeechSynthesisUtterance(text);
+    activeUtterance = utt;
+
+    utt.rate = rate;
+    utt.pitch = pitch;
+    if (found) utt.voice = found;
+
+    let resolved = false;
+    const finish = () => {
+      if (!resolved) {
+        resolved = true;
+        activeUtterance = null;
+        resolve();
+      }
+    };
+
+    utt.onend = finish;
+    utt.onerror = (e) => {
+      finish();
+    };
+
+    synth.speak(utt);
+
+    const watchTime = Math.max(5000, text.length * 100);
+    const watchdog = setTimeout(() => {
+      if (!resolved && session === currentReadSession) {
+        console.log('Watchdog triggered: SpeechSynthesis got stuck.');
+        synth.cancel();
+        finish();
+      }
+    }, watchTime);
+
+    const originalFinish = finish;
+    finish = () => {
+      clearTimeout(watchdog);
+      originalFinish();
+    };
+  });
+}
+
 async function readCurrentChapter(){
   const isWebSpeech=currentProvider==='webspeech';
   if(!isWebSpeech&&!apiKeys[currentProvider]){openApiModal();return;}
@@ -2123,72 +2289,74 @@ async function readCurrentChapter(){
   const voiceId=document.getElementById('reader-voice').value;
   if(!voiceId&&currentProvider!=='webspeech'){toast('⚠️ Selecciona una voz');return;}
   const ch=epubChapters[currentChapter];
-  const cleanText=ch.content.replace(/\s+/g,' ').trim().substring(0,5000);
-  stopReading();
+
+  const audio=audioElements['reader'];
+  if(audio) audio.pause();
+  if(window.speechSynthesis) window.speechSynthesis.cancel();
+
   const btn=document.getElementById('read-btn');
   btn.disabled=true;btn.innerHTML='⏳ Generando…';
   document.getElementById('stop-btn').style.display='flex';
+
   try{
     const model=PROVIDERS[currentProvider]?.models?.[0]?.id||'';
-    startBackgroundKeepalive(); // start keepalive before TTS so audio focus is held
-    const blob=await ttsRequest(cleanText,voiceId,model);
-    if(blob!==null){
-      // API-based TTS — use real <audio> element
-      const url=URL.createObjectURL(blob);
-      setupPlayer('reader',url,blob,ch.title);
-      document.getElementById('reader-player-wrap').style.display='block';
-      const audio=audioElements['reader'];
-      audio.playbackRate=parseFloat(document.getElementById('read-speed').value);
-      audio.play();
-      document.getElementById('reader-play').textContent='⏸';
-      // Show mini player + MediaSession
-      showMiniPlayer(audio,ch.title);
-      audio.onended=()=>{
-        document.getElementById('reader-play').textContent='▶';
-        document.getElementById('stop-btn').style.display='none';
-        if(currentChapter<epubChapters.length-1){
-          setTimeout(()=>{showChapter(currentChapter+1);readCurrentChapter();},800);
-        } else {
-          stopBackgroundKeepalive();
-          hideMiniPlayer();
-          const book=books.find(b=>b.epubKey===currentEpubKey);
-          if(book){book.status='read';saveBooks();renderBooks();updateStats();}
-        }
-      };
-    } else {
-      // WebSpeech — speaks directly, no blob
-      // Update MediaSession with fake audio element trick for lock screen widget
-      document.getElementById('stop-btn').style.display='flex';
+    startBackgroundKeepalive();
+
+    if (isWebSpeech) {
       btn.disabled=false;btn.innerHTML='▶ Leer';
-      // Show mini player using silent audio for lock screen controls
+      const savedPara = localStorage.getItem('atk_para_' + currentEpubKey + '_' + currentChapter);
+      currentParaIndex = savedPara !== null ? parseInt(savedPara) : 0;
+
       if(_silentAudio){
         showMiniPlayer(_silentAudio, ch.title);
       }
-      // When WebSpeech finishes, auto-advance
-      // ttsRequest already resolved — advance chapter now
-      if(currentChapter<epubChapters.length-1){
-        setTimeout(()=>{showChapter(currentChapter+1);readCurrentChapter();},800);
-      } else {
-        stopBackgroundKeepalive();
-        hideMiniPlayer();
-        const book=books.find(b=>b.epubKey===currentEpubKey);
-        if(book){book.status='read';saveBooks();renderBooks();updateStats();}
+      playWebSpeechParagraphLoop();
+    } else {
+      const cleanText=ch.content.replace(/\s+/g,' ').trim().substring(0,5000);
+      const blob=await ttsRequest(cleanText,voiceId,model);
+      if(blob!==null){
+        const url=URL.createObjectURL(blob);
+        setupPlayer('reader',url,blob,ch.title);
+        document.getElementById('reader-player-wrap').style.display='block';
+        const audio=audioElements['reader'];
+        audio.playbackRate=parseFloat(document.getElementById('read-speed').value);
+        audio.play();
+        document.getElementById('reader-play').textContent='⏸';
+        showMiniPlayer(audio,ch.title);
+        audio.onended=()=>{
+          document.getElementById('reader-play').textContent='▶';
+          document.getElementById('stop-btn').style.display='none';
+          if(currentChapter<epubChapters.length-1){
+            currentParaIndex = 0;
+            saveParaPosition();
+            setTimeout(()=>{showChapter(currentChapter+1);readCurrentChapter();},800);
+          } else {
+            stopBackgroundKeepalive();
+            hideMiniPlayer();
+            const book=books.find(b=>b.epubKey===currentEpubKey);
+            if(book){book.status='read';saveBooks();renderBooks();updateStats();}
+          }
+        };
       }
-      return; // skip the btn reset below
     }
   }catch(e){
     stopBackgroundKeepalive();
     toast('❌ '+e.message);
   }
   btn.disabled=false;btn.innerHTML='▶ Leer';
-  document.getElementById('stop-btn').style.display='none';
 }
 
 function stopReading(){
+  isCurrentlyReading = false;
+  currentReadSession++;
+  activeUtterance = null;
   const audio=audioElements['reader'];
   if(audio) audio.pause();
   if(window.speechSynthesis) window.speechSynthesis.cancel();
   stopBackgroundKeepalive();
+
+  document.querySelectorAll('.reader-para').forEach(el => el.classList.remove('speaking'));
+
   const pb=document.getElementById('reader-play');
   if(pb) pb.textContent='▶';
   const sb=document.getElementById('stop-btn');
@@ -2724,13 +2892,25 @@ function loadWebSpeechVoices(){
   };
   const seen=new Set();
   return esVoices
-    .filter(v=>{ const k=v.name+v.lang; if(seen.has(k)) return false; seen.add(k); return score(v)>=0; })
+    .filter(v=>{ const k=v.voiceURI; if(seen.has(k)) return false; seen.add(k); return score(v)>=0; })
     .sort((a,b)=>score(b)-score(a))
     .map(v=>{
       const langKey=v.lang.toLowerCase().slice(0,5);
       const accent=ACCENT_LABELS[langKey]||('🌍 '+v.lang);
-      const cleanName=v.name.replace(/\s*\([a-z]{2}[-_][A-Z]{2,3}\)\s*$/,'').trim();
-      const genderHint=v.name.toLowerCase().includes('female')||['helena','monica','lucia','sofia','maria','paloma'].some(n=>v.name.toLowerCase().includes(n))?'♀':'♂';
+      let cleanName=v.name.replace(/\s*\([a-z]{2}[-_][A-Z]{2,3}\)\s*$/,'').trim();
+
+      // Extract voice code variant from voiceURI if name is generic (like Google voices)
+      const match=v.voiceURI.match(/-x-([a-z0-9]+)/i);
+      const variant=match?match[1]:'';
+      if(variant&&!cleanName.toLowerCase().includes(variant)){
+        cleanName+=` (${variant})`;
+      }
+
+      // Determine gender
+      const lowerName=(v.name+' '+v.voiceURI).toLowerCase();
+      const isFemale=lowerName.includes('female')||['helena','monica','lucia','sofia','maria','paloma','paulina','elena','sabina'].some(n=>lowerName.includes(n));
+      const genderHint=isFemale?'♀':'♂';
+
       return{voice_id:v.voiceURI,name:cleanName+' '+genderHint+' '+accent,labels:{lang:'es',accent:v.lang},_wsVoice:v};
     });
 }
