@@ -45,6 +45,13 @@
 html,body{height:100%;height:100dvh;overflow:hidden}
 body{font-family:var(--sans);background:var(--bg);color:var(--t1);display:flex;flex-direction:column}
 
+.light-theme{
+  --bg:#f4f4f8;--s1:#ffffff;--s2:#f0eff5;--s3:#e6e5ec;--s4:#dcdbe3;--s5:#d2d1da;
+  --b1:rgba(0,0,0,.06);--b2:rgba(0,0,0,.1);--b3:rgba(0,0,0,.15);--b4:rgba(0,0,0,.2);
+  --t1:#1a1924;--t2:#4a485a;--t3:#6b687f;--t4:#8b88a1;
+  --gold:#b8922d;--gold2:#d4a843;--gold3:#e8c06a;--gold-g:rgba(184,146,45,.12);--gold-b:rgba(184,146,45,.06);
+}
+
 /* ── NOISE TEXTURE OVERLAY ── */
 body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");pointer-events:none;z-index:0;opacity:.5}
 
@@ -74,7 +81,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 .sidebar-scroll{flex:1;overflow-y:auto;padding:12px 0}
 .sidebar-scroll::-webkit-scrollbar{width:3px}
 .sidebar-scroll::-webkit-scrollbar-thumb{background:var(--s4);border-radius:2px}
-.nav-section{padding:12px 16px 4px;font-size:9px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--t3)}
+.nav-section{padding:12px 16px 4px;font-size:9px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--t1);opacity:0.8}
 .nav-item{display:flex;align-items:center;gap:10px;padding:9px 16px;border-radius:0;cursor:pointer;transition:all .15s;color:var(--t2);font-size:13px;font-weight:500;border-left:2px solid transparent;position:relative}
 .nav-item:hover{color:var(--t1);background:var(--b1)}
 .nav-item.active{color:var(--gold2);background:var(--gold-b);border-left-color:var(--gold)}
@@ -561,7 +568,7 @@ input[type=range]{accent-color:var(--gold);cursor:pointer;width:100%}
   :root{--sidebar-w:280px}
   /* Safe area — topbar */
   #topbar{
-    padding-top:calc(12px + env(safe-area-inset-top));
+    padding-top:calc(24px + env(safe-area-inset-top));
     padding-left:calc(12px + env(safe-area-inset-left));
     padding-right:calc(12px + env(safe-area-inset-right));
   }
@@ -606,8 +613,8 @@ input[type=range]{accent-color:var(--gold);cursor:pointer;width:100%}
   /* Grid libros: 2 columnas fijas, portadas sin solapamientos */
   #books-grid{
     grid-template-columns:repeat(2,1fr);
-    gap:12px;
-    padding:12px 12px calc(72px + env(safe-area-inset-bottom));
+    gap:16px;
+    padding:16px 16px calc(72px + env(safe-area-inset-bottom));
     align-items:start;
   }
   /* Content area: dejar espacio a bottom nav */
@@ -623,7 +630,7 @@ input[type=range]{accent-color:var(--gold);cursor:pointer;width:100%}
   .sidebar-bottom{padding-bottom:calc(16px + env(safe-area-inset-bottom))}
 }
 @media(max-width:400px){
-  #books-grid{grid-template-columns:repeat(2,1fr);gap:8px;padding:8px 8px calc(64px + env(safe-area-inset-bottom))}
+  #books-grid{grid-template-columns:repeat(2,1fr);gap:12px;padding:12px 12px calc(64px + env(safe-area-inset-bottom))}
 }
 
 /* duplicate block removed — styles consolidated above */
@@ -701,6 +708,10 @@ input[type=range]{accent-color:var(--gold);cursor:pointer;width:100%}
         <span class="stat-val" id="stat-reading">0</span>
         <span class="stat-lbl">Oyendo</span>
       </div>
+    </div>
+    <div class="api-chip" id="theme-chip" onclick="toggleTheme()" style="margin-bottom:8px">
+      <div class="api-dot" style="background:var(--gold);box-shadow:none"></div>
+      <span class="api-name" id="theme-label">Modo Claro</span>
     </div>
     <div class="api-chip" id="api-chip" onclick="openApiModal()">
       <div class="api-dot" id="api-dot"></div>
@@ -1195,6 +1206,13 @@ let speedIdx = 1;
 //  INIT
 // ═══════════════════════════════════════════
 function init(){
+  // Load Theme
+  if(localStorage.getItem('audioteka_theme')==='light'){
+    document.body.classList.add('light-theme');
+    const lbl=document.getElementById('theme-label');
+    if(lbl) lbl.textContent='Modo Oscuro';
+  }
+
   // Migrate old data
   if(!apiKeys.elevenlabs && localStorage.getItem('voz_apikey'))
     apiKeys.elevenlabs = localStorage.getItem('voz_apikey');
@@ -1352,6 +1370,13 @@ function renderSidebar(){
       <span class="ni-badge">${count}</span>
     </div>`;
   }).join('');
+}
+
+function toggleTheme(){
+  const isLight=document.body.classList.toggle('light-theme');
+  const lbl=document.getElementById('theme-label');
+  if(lbl) lbl.textContent=isLight?'Modo Oscuro':'Modo Claro';
+  localStorage.setItem('audioteka_theme', isLight?'light':'dark');
 }
 
 function toggleSidebar(){
@@ -2427,8 +2452,16 @@ function seekMiniPlayer(e){
 
 function toggleMiniPlay(){
   if(!miniPlayerAudio) return;
-  if(miniPlayerAudio.paused) miniPlayerAudio.play();
-  else miniPlayerAudio.pause();
+  if(miniPlayerAudio.paused) {
+    miniPlayerAudio.play();
+    if(currentProvider==='webspeech'){
+      if(window.speechSynthesis&&window.speechSynthesis.paused) window.speechSynthesis.resume();
+      else if(!isCurrentlyReading) readCurrentChapter();
+    }
+  } else {
+    miniPlayerAudio.pause();
+    if(currentProvider==='webspeech' && window.speechSynthesis) window.speechSynthesis.pause();
+  }
 }
 
 function setMiniVolume(v){
@@ -2437,6 +2470,14 @@ function setMiniVolume(v){
 
 function skip(secs){
   if(!miniPlayerAudio) return;
+  if(currentProvider==='webspeech'){
+    currentParaIndex += (secs > 0 ? 1 : -1);
+    if(currentParaIndex<0) currentParaIndex=0;
+    saveParaPosition();
+    if(window.speechSynthesis) window.speechSynthesis.cancel();
+    if(!isCurrentlyReading) readCurrentChapter();
+    return;
+  }
   miniPlayerAudio.currentTime=Math.max(0,Math.min(miniPlayerAudio.duration||0,miniPlayerAudio.currentTime+secs));
 }
 
@@ -2490,11 +2531,11 @@ function updateMediaSession(){
 
   // Action handlers
   navigator.mediaSession.setActionHandler('play', ()=>{
-    miniPlayerAudio?.play();
+    toggleMiniPlay();
     navigator.mediaSession.playbackState='playing';
   });
   navigator.mediaSession.setActionHandler('pause', ()=>{
-    miniPlayerAudio?.pause();
+    toggleMiniPlay();
     navigator.mediaSession.playbackState='paused';
   });
   navigator.mediaSession.setActionHandler('stop', ()=>{
@@ -2880,19 +2921,17 @@ function loadWebSpeechVoices(){
     'es-es':'🇪🇸 España','es-mx':'🇲🇽 México','es-us':'🇺🇸 EEUU',
     'es-ar':'🇦🇷 Argentina','es-co':'🇨🇴 Colombia','es-419':'🌎 Latam','es-xl':'🌎 Latam'
   };
-  // Score: Google/Microsoft/Apple first, then any, skip pure TTS junk
-  const junk=['espeak','mbrola','festival','pico','eloquence'];
+  // Score: Google/Microsoft/Apple first, then any. Don't filter out valid Android voices.
   const quality=['google','microsoft','apple','samsung'];
   const score=v=>{
     const n=v.name.toLowerCase();
-    if(junk.some(w=>n.includes(w))) return -1;
     if(quality.some(w=>n.includes(w))) return 10;
-    if(!v.localService) return 5; // cloud/network voices tend to be better
+    if(!v.localService) return 5; // network voices tend to be better
     return 1;
   };
   const seen=new Set();
   return esVoices
-    .filter(v=>{ const k=v.voiceURI; if(seen.has(k)) return false; seen.add(k); return score(v)>=0; })
+    .filter(v=>{ const k=v.voiceURI; if(seen.has(k)) return false; seen.add(k); return true; })
     .sort((a,b)=>score(b)-score(a))
     .map(v=>{
       const langKey=v.lang.toLowerCase().slice(0,5);
