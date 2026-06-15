@@ -1,1142 +1,3 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Audioteka — Biblioteca & Lector de Voz</title>
-<meta name="description" content="Tu biblioteca personal con lector de voz. Organiza y escucha tus libros.">
-<meta name="theme-color" content="#080810">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Audioteka">
-<link rel="manifest" href="./manifest.json">
-<link rel="apple-touch-icon" href="./apple-touch-icon.png">
-<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-<link rel="icon" type="image/png" sizes="512x512" href="./icon-512.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
-  /* Dark luxury palette */
-  --bg:#080810;--s1:#0e0e1a;--s2:#141421;--s3:#1c1c2e;--s4:#242438;--s5:#2e2e48;
-  --b1:rgba(255,255,255,.05);--b2:rgba(255,255,255,.09);--b3:rgba(255,255,255,.16);--b4:rgba(255,255,255,.25);
-  --t1:#f2f0f8;--t2:#9490a8;--t3:#4e4a68;--t4:#2e2a48;
-  /* Gold accent system */
-  --gold:#d4a843;--gold2:#e8c06a;--gold3:#b8922d;--gold-g:rgba(212,168,67,.12);--gold-b:rgba(212,168,67,.06);
-  /* Status colors */
-  --green:#3dd68c;--amber:#f59e0b;--red:#f04444;--blue:#60a5fa;--purple:#a78bfa;
-  /* Semantic */
-  --ac:var(--gold);--ac2:var(--gold3);--acg:var(--gold-g);
-  /* Fonts */
-  --serif:'Cormorant Garamond',Georgia,serif;
-  --sans:'DM Sans',system-ui,sans-serif;
-  --mono:'DM Mono',monospace;
-  /* Sidebar */
-  --sidebar-w:260px;
-  /* Safe areas */
-  --sat:env(safe-area-inset-top,0px);
-  --sab:env(safe-area-inset-bottom,0px);
-  --sal:env(safe-area-inset-left,0px);
-  --sar:env(safe-area-inset-right,0px);
-}
-html,body{height:100%;height:100dvh;overflow:hidden}
-body{font-family:var(--sans);background:var(--bg);color:var(--t1);display:flex;flex-direction:column}
-
-.light-theme{
-  --bg:#f4f4f8;--s1:#ffffff;--s2:#f0eff5;--s3:#e6e5ec;--s4:#dcdbe3;--s5:#d2d1da;
-  --b1:rgba(0,0,0,.06);--b2:rgba(0,0,0,.1);--b3:rgba(0,0,0,.15);--b4:rgba(0,0,0,.2);
-  --t1:#1a1924;--t2:#4a485a;--t3:#6b687f;--t4:#8b88a1;
-  --gold:#b8922d;--gold2:#d4a843;--gold3:#e8c06a;--gold-g:rgba(184,146,45,.12);--gold-b:rgba(184,146,45,.06);
-}
-
-/* ── NOISE TEXTURE OVERLAY ── */
-body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");pointer-events:none;z-index:0;opacity:.5}
-
-/* ═══════════════════════════════════════════
-   APP SHELL
-═══════════════════════════════════════════ */
-#app-shell{display:flex;flex:1;overflow:hidden;position:relative;z-index:1}
-
-/* ── SIDEBAR ── */
-#sidebar{
-  width:var(--sidebar-w);min-width:var(--sidebar-w);
-  background:var(--s1);
-  border-right:1px solid var(--b1);
-  display:flex;flex-direction:column;
-  overflow:hidden;
-  transition:transform .3s cubic-bezier(.4,0,.2,1);
-  position:relative;z-index:11;
-  isolation:isolate;
-  padding-top:var(--sat);
-  padding-left:var(--sal);
-  padding-bottom:var(--sab);
-}
-.sidebar-brand{padding:20px 20px 16px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--b1)}
-.brand-icon{width:38px;height:38px;background:linear-gradient(135deg,var(--gold3),var(--gold));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;box-shadow:0 4px 16px rgba(212,168,67,.25)}
-.brand-name{font-family:var(--serif);font-size:20px;font-weight:600;color:var(--t1);letter-spacing:-.3px}
-.brand-sub{font-size:10px;color:var(--t3);letter-spacing:.5px;text-transform:uppercase}
-.sidebar-scroll{flex:1;overflow-y:auto;padding:12px 0}
-.sidebar-scroll::-webkit-scrollbar{width:3px}
-.sidebar-scroll::-webkit-scrollbar-thumb{background:var(--s4);border-radius:2px}
-.nav-section{padding:12px 16px 4px;font-size:9px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--t1);opacity:0.8}
-.nav-item{display:flex;align-items:center;gap:10px;padding:9px 16px;border-radius:0;cursor:pointer;transition:all .15s;color:var(--t1);font-size:13px;font-weight:500;border-left:2px solid transparent;position:relative;opacity:0.75}
-.nav-item:hover{color:var(--t1);background:var(--b1);opacity:1}
-.nav-item.active{color:var(--gold2);background:var(--gold-b);border-left-color:var(--gold)}
-.nav-item .ni-icon{width:18px;text-align:center;font-size:14px;flex-shrink:0}
-.nav-item .ni-badge{margin-left:auto;font-size:10px;background:var(--s4);color:var(--t3);padding:1px 6px;border-radius:10px;font-family:var(--mono)}
-.nav-divider{height:1px;background:var(--b1);margin:8px 0}
-.add-cat-btn{margin:8px 16px;padding:8px 12px;border-radius:8px;border:1px dashed var(--b2);background:transparent;color:var(--t3);font-family:var(--sans);font-size:12px;cursor:pointer;transition:all .15s;text-align:left;display:flex;align-items:center;gap:8px;width:calc(100% - 32px)}
-.add-cat-btn:hover{border-color:var(--gold);color:var(--gold);background:var(--gold-b)}
-.sidebar-bottom{padding:12px 16px;border-top:1px solid var(--b1);padding-bottom:calc(12px + var(--sab))}
-.sidebar-stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px}
-.stat-item{background:var(--s2);border:1px solid var(--b1);border-radius:8px;padding:8px;text-align:center}
-.stat-val{display:block;font-family:var(--serif);font-size:20px;font-weight:600;color:var(--gold);line-height:1}
-.stat-lbl{display:block;font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
-.api-chip{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;border:1px solid var(--b1);background:var(--s2);cursor:pointer;transition:all .15s;font-size:11px}
-.api-chip:hover{border-color:var(--gold);background:var(--gold-b)}
-.api-chip.ok{border-color:rgba(61,214,140,.25)}
-.api-dot{width:6px;height:6px;border-radius:50%;background:var(--t3);flex-shrink:0}
-.api-chip.ok .api-dot{background:var(--green);box-shadow:0 0 6px var(--green)}
-.api-name{font-weight:600;color:var(--t2)}
-.api-chip.ok .api-name{color:var(--green)}
-
-/* ── MAIN ── */
-#main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
-
-/* ── TOPBAR ── */
-#topbar{
-  display:flex;align-items:center;gap:10px;
-  padding:10px 20px;padding-top:calc(10px + var(--sat));
-  border-bottom:1px solid var(--b1);
-  background:var(--s1);
-  flex-shrink:0;
-  padding-right:calc(20px + var(--sar));
-}
-.menu-toggle{width:36px;height:36px;border-radius:8px;border:1px solid var(--b1);background:transparent;color:var(--t2);cursor:pointer;display:none;align-items:center;justify-content:center;font-size:16px;transition:all .15s;flex-shrink:0}
-.menu-toggle:hover{border-color:var(--b3);color:var(--t1)}
-.topbar-title{font-family:var(--serif);font-size:18px;color:var(--t1);font-weight:600;white-space:nowrap}
-.search-wrap{flex:1;display:flex;align-items:center;gap:8px;background:var(--s2);border:1px solid var(--b1);border-radius:10px;padding:0 12px;max-width:480px;transition:border-color .15s}
-.search-wrap:focus-within{border-color:var(--gold)}
-.search-ico{width:14px;height:14px;color:var(--t3);flex-shrink:0}
-#search-input{flex:1;background:transparent;border:none;outline:none;color:var(--t1);font-family:var(--sans);font-size:13px;padding:9px 0}
-#search-input::placeholder{color:var(--t3)}
-.search-clear{background:transparent;border:none;color:var(--t3);cursor:pointer;font-size:12px;padding:4px}
-.topbar-right{display:flex;align-items:center;gap:8px;margin-left:auto;flex-shrink:0}
-.view-toggle{display:flex;gap:2px;background:var(--s2);border:1px solid var(--b1);border-radius:8px;padding:2px}
-.view-btn{width:30px;height:28px;border-radius:6px;border:none;background:transparent;color:var(--t3);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
-.view-btn svg{width:14px;height:14px}
-.view-btn.active{background:var(--s4);color:var(--t1)}
-.view-btn:hover:not(.active){color:var(--t2)}
-.book-count{font-size:11px;color:var(--t3);font-family:var(--mono);white-space:nowrap}
-
-/* ═══════════════════════════════════════════
-   CONTENT AREA
-═══════════════════════════════════════════ */
-#content-area{flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0}
-.content-panel{display:none;flex:1;overflow:hidden;flex-direction:column;min-height:0}
-.content-panel.active{display:flex}
-#panel-library{overflow-y:auto}
-.panel-scroll{flex:1;overflow-y:auto;padding:24px}
-.panel-scroll::-webkit-scrollbar{width:4px}
-.panel-scroll::-webkit-scrollbar-thumb{background:var(--s4);border-radius:2px}
-
-/* ── CATEGORY HEADER ── */
-.cat-header{display:flex;align-items:center;gap:12px;padding:20px 24px 0;flex-shrink:0}
-.cat-header-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
-.cat-header-title{font-family:var(--serif);font-size:26px;font-weight:600;color:var(--t1)}
-.cat-header-count{font-size:12px;color:var(--t3);font-family:var(--mono)}
-
-/* ── BOOKS GRID ── */
-#books-grid{
-  display:grid;
-  grid-template-columns:repeat(auto-fill, minmax(160px, 200px));
-  justify-content:start;
-  align-items:start;
-  gap:20px;
-  padding:20px 24px 40px;
-  box-sizing:border-box;
-  width:100%;
-}
-#books-grid[data-view="list"]{
-  grid-template-columns:1fr;
-  align-items:start;
-  gap:8px;
-  padding:16px 20px;
-}
-
-/* ── BOOK CARD ── */
-.book-card{
-  display:flex;
-  flex-direction:column;
-  background:var(--s2);
-  border:1px solid var(--b1);
-  border-radius:12px;
-  overflow:hidden;
-  cursor:pointer;
-  transition:all .25s cubic-bezier(.4,0,.2,1);
-  position:relative;
-  box-shadow:0 10px 20px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.05);
-  border-left:1px solid rgba(255,255,255,.08);
-  width:100%;
-  min-width:0;
-}
-.book-card:hover{
-  border-color:var(--gold);
-  transform:translateY(-6px);
-  box-shadow:0 15px 30px rgba(0,0,0,.5), 0 0 12px rgba(212,168,67,.2);
-}
-/* Cover: portrait 2:3 */
-.book-card .card-cover{
-  position:relative;
-  overflow:hidden;
-  background:var(--s3);
-  flex-shrink:0;
-  width:100%;
-  aspect-ratio:2/3;
-  border-radius:11px 11px 0 0;
-}
-.book-card .card-cover img{
-  width:100%;
-  height:100%;
-  object-fit:cover;
-  display:block;
-}
-.book-card .card-cover-ph{
-  position:absolute;
-  inset:0;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  gap:8px;
-}
-.book-card .card-cover{position:relative}
-.book-card .card-ph-initial{font-family:var(--serif);font-size:36px;font-weight:700;opacity:.7}
-.book-card .card-info{
-  padding:12px 10px;
-  background:linear-gradient(to top,var(--s1),var(--s2));
-  display:flex;
-  flex-direction:column;
-  justify-content:flex-start;
-  gap:4px;
-  min-width:0;
-}
-.book-card .card-title{
-  font-size:12px;
-  font-weight:600;
-  color:var(--t1);
-  line-height:1.4;
-  display:-webkit-box;
-  -webkit-line-clamp:2;
-  -webkit-box-orient:vertical;
-  overflow:hidden;
-  margin-bottom:2px;
-}
-.book-card .card-author{font-size:10.5px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.book-card .card-status{position:absolute;top:8px;right:8px;width:22px;height:22px;border-radius:6px;background:rgba(8,8,16,.75);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;font-size:11px;z-index:2;border:1px solid var(--b1)}
-.book-card .card-progress{position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--s4)}
-.book-card .card-progress-fill{height:100%;background:linear-gradient(90deg,var(--gold3),var(--gold));border-radius:0 2px 2px 0;transition:width .3s}
-.book-card .card-playing{position:absolute;top:8px;left:8px;width:22px;height:22px;border-radius:6px;background:var(--gold);display:none;align-items:center;justify-content:center;font-size:9px;z-index:2}
-.book-card.is-playing .card-playing{display:flex;animation:pulse-gold 1.5s ease infinite}
-@keyframes pulse-gold{0%,100%{box-shadow:0 0 0 0 rgba(212,168,67,.4)}50%{box-shadow:0 0 0 6px rgba(212,168,67,0)}}
-
-/* Modern subtle mesh background for grid */
-#books-grid[data-view="grid"]{
-  background:radial-gradient(circle at top, rgba(20, 20, 35, 0.3) 0%, transparent 80%);
-  padding-bottom:40px;
-}
-
-/* ── LIST VIEW ── */
-#books-grid[data-view="list"] .book-card{
-  display:flex;
-  flex-direction:row;
-  align-items:center;
-  gap:14px;
-  padding:10px 14px;
-  border-radius:10px;
-  width:100%;
-  height:auto;
-  box-shadow:0 2px 8px rgba(0,0,0,.3);
-  transform:none !important;
-  min-height:80px;
-}
-#books-grid[data-view="list"] .book-card:hover{
-  transform:translateX(6px) !important;
-  border-color:var(--gold);
-}
-#books-grid[data-view="list"] .book-card .card-cover{
-  width:44px;
-  min-width:44px;
-  height:66px;
-  padding-bottom:0;
-  aspect-ratio:auto;
-  border-radius:6px;
-  flex-shrink:0;
-}
-#books-grid[data-view="list"] .book-card .card-cover img{
-  position:relative;
-  inset:auto;
-  width:100%;
-  height:100%;
-}
-#books-grid[data-view="list"] .book-card .card-info{
-  padding:0;
-  flex:1;
-  min-width:0;
-  background:none;
-  min-height:unset;
-  justify-content:center;
-  gap:2px;
-}
-#books-grid[data-view="list"] .book-card .card-title{font-size:13px;-webkit-line-clamp:1;margin-bottom:0}
-#books-grid[data-view="list"] .book-card .card-author{font-size:11px}
-#books-grid[data-view="list"] .book-card .card-status{position:static;background:var(--s3);border:1px solid var(--b1);flex-shrink:0}
-#books-grid[data-view="list"] .book-card .card-progress{position:static;height:3px;border-radius:2px;margin-top:6px;background:var(--s4);width:100%}
-#books-grid[data-view="list"] .book-card .card-playing{position:static;background:var(--gold);margin-right:4px;flex-shrink:0}
-
-/* ── EMPTY STATE ── */
-.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:60px 32px;color:var(--t3);text-align:center;flex:1}
-.empty-shelf{position:relative;margin-bottom:8px}
-.shelf-books{display:flex;gap:4px;align-items:flex-end;margin-bottom:4px}
-.shelf-book{border-radius:3px 1px 1px 3px;height:60px}
-.b1{width:14px;background:var(--s4);height:64px}
-.b2{width:20px;background:var(--s5);height:56px}
-.b3{width:12px;background:var(--s4);height:68px}
-.b4{width:16px;background:var(--s5);height:52px}
-.shelf-plank{height:4px;background:var(--s4);border-radius:2px;width:100%}
-.empty-state h2{font-family:var(--serif);font-size:24px;font-weight:600;color:var(--t2)}
-.empty-state p{font-size:13px;line-height:1.7;max-width:320px}
-.empty-state p strong{color:var(--t1)}
-
-/* ═══════════════════════════════════════════
-   READER PANEL
-═══════════════════════════════════════════ */
-#panel-reader{flex-direction:row}
-.reader-sidebar{width:220px;min-width:220px;border-right:1px solid var(--b1);background:var(--s1);display:flex;flex-direction:column;overflow:hidden}
-.reader-sb-head{padding:12px 14px;font-size:9px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--t3);border-bottom:1px solid var(--b1);display:flex;align-items:center;justify-content:space-between}
-.reader-toc{flex:1;overflow-y:auto;padding:6px}
-.reader-toc::-webkit-scrollbar{width:3px}
-.reader-toc-item{padding:7px 10px;border-radius:7px;font-size:12px;color:var(--t2);cursor:pointer;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-left:2px solid transparent}
-.reader-toc-item:hover{background:var(--s2);color:var(--t1)}
-.reader-toc-item.active{background:var(--gold-b);color:var(--gold2);border-left-color:var(--gold)}
-.reader-content{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;position:relative}
-.reader-text{flex:1;overflow-y:auto;padding:32px 40px;font-family:var(--serif);font-size:19px;line-height:2;color:var(--t1);max-width:740px;margin:0 auto;width:100%}
-.ch-nav-arrow{position:absolute;top:50%;transform:translateY(-50%);background:var(--s2);border:1px solid var(--b1);color:var(--t2);font-size:28px;width:36px;height:60px;border-radius:8px;cursor:pointer;opacity:0;transition:opacity .2s;z-index:5;display:flex;align-items:center;justify-content:center;line-height:1}
-.ch-nav-prev{left:4px}
-.ch-nav-next{right:4px}
-.reader-content:hover .ch-nav-arrow{opacity:0.7}
-.ch-nav-arrow:hover{opacity:1!important;background:var(--s3)}
-.reader-text::-webkit-scrollbar{width:4px}
-.reader-text::-webkit-scrollbar-thumb{background:var(--s4);border-radius:2px}
-.reader-text h1,.reader-text h2,.reader-text h3{font-family:var(--serif);margin:1.5em 0 .6em;color:var(--t1);font-weight:600}
-.reader-text h1{font-size:28px}
-.reader-text h2{font-size:22px}
-.reader-text p{margin-bottom:1em;color:var(--t1)}
-.reader-para{cursor:pointer;transition:background 0.2s,color 0.2s;border-radius:4px;padding:2px 6px;color:var(--t1)}
-.reader-para:hover{background:rgba(255,255,255,0.04)}
-.reader-text .speaking{background:rgba(212,168,67,0.2) !important;color:var(--t1) !important}
-.reader-text .speaking-word{background:rgba(212,168,67,0.6);border-radius:3px;padding:0 2px}
-/* ── READER CONTROLS ── */
-.reader-controls{padding:14px 20px;border-top:1px solid var(--b1);background:var(--s1);display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0;padding-bottom:calc(14px + var(--sab))}
-.rc-group{display:flex;align-items:center;gap:6px}
-.rc-label{font-size:10px;color:var(--t3);white-space:nowrap}
-.rc-select{background:var(--s2);border:1px solid var(--b1);border-radius:7px;padding:5px 8px;color:var(--t1);font-family:var(--sans);font-size:11px;outline:none;cursor:pointer;transition:border-color .15s}
-.rc-select:focus{border-color:var(--gold)}
-.rc-select option{background:var(--s2)}
-.rc-input{width:60px;background:var(--s2);border:1px solid var(--b1);border-radius:7px;padding:5px 8px;color:var(--t1);font-size:11px;outline:none;cursor:pointer}
-.rc-btn{padding:6px 14px;border-radius:7px;border:1px solid var(--b1);background:transparent;color:var(--t2);font-family:var(--sans);font-size:12px;font-weight:500;cursor:pointer;transition:all .15s;white-space:nowrap;display:flex;align-items:center;gap:6px}
-.rc-btn:hover{border-color:var(--b3);color:var(--t1)}
-.rc-btn.primary{background:linear-gradient(135deg,var(--gold3),var(--gold));border-color:var(--gold);color:#000;font-weight:600}
-.rc-btn.primary:hover{filter:brightness(1.1)}
-.rc-btn:disabled{opacity:.4;cursor:not-allowed}
-.rc-btn.danger:hover{border-color:var(--red);color:var(--red)}
-.ch-nav{display:flex;align-items:center;gap:6px}
-.ch-counter{font-size:11px;color:var(--t3);font-family:var(--mono);white-space:nowrap}
-.file-drop-btn{flex:1;display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:8px;border:1px dashed var(--b2);background:transparent;cursor:pointer;font-size:11px;color:var(--t3);transition:all .15s;min-width:140px;max-width:220px;white-space:nowrap;overflow:hidden}
-.file-drop-btn:hover{border-color:var(--gold);color:var(--gold);background:var(--gold-b)}
-.file-drop-btn.has-file{border-color:rgba(212,168,67,.4);color:var(--gold2);background:var(--gold-b)}
-/* Player */
-.reader-player{padding:0 20px 10px;background:var(--s1)}
-.audio-player{background:var(--s2);border:1px solid var(--b2);border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:10px}
-.play-btn{width:34px;height:34px;border-radius:50%;border:none;background:linear-gradient(135deg,var(--gold3),var(--gold));color:#000;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;font-weight:700}
-.play-btn:hover{filter:brightness(1.15)}
-.play-btn:disabled{opacity:.4;cursor:not-allowed}
-.prog-wrap{flex:1;cursor:pointer}
-.prog-track{height:3px;background:var(--s4);border-radius:2px;position:relative;overflow:hidden}
-.prog-fill{height:100%;background:linear-gradient(90deg,var(--gold3),var(--gold));border-radius:2px;width:0;transition:width .1s linear}
-.prog-times{display:flex;justify-content:space-between;font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:4px}
-.dl-btn{width:30px;height:30px;border-radius:7px;border:1px solid var(--b2);background:transparent;color:var(--t2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;transition:all .15s;text-decoration:none;flex-shrink:0}
-.dl-btn:hover{border-color:var(--green);color:var(--green)}
-
-/* ═══════════════════════════════════════════
-   SYNTH PANEL
-═══════════════════════════════════════════ */
-#panel-synth .panel-scroll{max-width:760px;margin:0 auto;width:100%}
-.card{background:var(--s2);border:1px solid var(--b1);border-radius:12px;padding:16px;transition:border-color .15s}
-.card:hover{border-color:var(--b2)}
-.field-label{font-size:10px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:var(--t3);margin-bottom:6px}
-.field-input{width:100%;background:var(--s3);border:1px solid var(--b1);border-radius:8px;padding:9px 12px;color:var(--t1);font-family:var(--sans);font-size:13px;outline:none;transition:border-color .15s}
-.field-input:focus{border-color:var(--gold)}
-.field-input::placeholder{color:var(--t3)}
-textarea.field-input{resize:vertical;min-height:100px;line-height:1.6}
-.field-select{width:100%;background:var(--s3);border:1px solid var(--b1);border-radius:8px;padding:9px 12px;color:var(--t1);font-family:var(--sans);font-size:13px;outline:none;cursor:pointer;transition:border-color .15s}
-.field-select:focus{border-color:var(--gold)}
-.field-select option{background:var(--s3)}
-.slider-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
-.slider-col{display:flex;flex-direction:column;gap:4px}
-.slider-lbl{font-size:10px;color:var(--t3)}
-.slider-val{color:var(--gold2);font-family:var(--mono);font-size:10px}
-input[type=range]{accent-color:var(--gold);cursor:pointer;width:100%}
-.gen-btn{width:100%;padding:13px;border-radius:10px;border:none;background:linear-gradient(135deg,var(--gold3),var(--gold));color:#000;font-family:var(--sans);font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;letter-spacing:.2px}
-.gen-btn:hover{filter:brightness(1.1);transform:translateY(-1px);box-shadow:0 8px 24px rgba(212,168,67,.3)}
-.gen-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
-.gen-progress{height:3px;background:var(--s4);border-radius:2px;overflow:hidden}
-.gen-progress-fill{height:100%;background:linear-gradient(90deg,var(--gold3),var(--gold));border-radius:2px;width:0;transition:width .3s}
-.gen-progress-fill.indeterminate{animation:indeterminate 1.5s ease infinite;width:40%}
-@keyframes indeterminate{0%{transform:translateX(-200%)}100%{transform:translateX(600%)}}
-.provider-banner{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-radius:10px;border:1px solid var(--b1);background:var(--s2);font-size:12px}
-.prov-info{display:flex;align-items:center;gap:10px}
-.prov-name{font-weight:600;color:var(--t1)}
-.prov-sub{color:var(--t3);font-size:10px}
-.badge{font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;letter-spacing:.3px;text-transform:uppercase}
-.badge.green{background:rgba(61,214,140,.12);color:var(--green);border:1px solid rgba(61,214,140,.2)}
-.badge.amber{background:rgba(245,158,11,.12);color:var(--amber);border:1px solid rgba(245,158,11,.2)}
-.badge.purple{background:rgba(167,139,250,.12);color:var(--purple);border:1px solid rgba(167,139,250,.2)}
-.badge.gold{background:rgba(212,168,67,.12);color:var(--gold);border:1px solid rgba(212,168,67,.2)}
-.badge.red{background:rgba(240,68,68,.12);color:var(--red);border:1px solid rgba(240,68,68,.2)}
-.char-info{font-size:10px;color:var(--t3);text-align:right;font-family:var(--mono)}
-
-/* ═══════════════════════════════════════════
-   VOICES PANEL
-═══════════════════════════════════════════ */
-.voice-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
-.voice-card{background:var(--s2);border:1px solid var(--b1);border-radius:10px;padding:12px;cursor:pointer;transition:all .15s;position:relative}
-.voice-card:hover{border-color:var(--b2);transform:translateY(-1px)}
-.voice-card.selected{border-color:var(--gold);background:var(--gold-b)}
-.vc-top{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-.vc-avatar{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
-.vc-name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.vc-meta{font-size:9px;color:var(--t3)}
-.vc-btns{display:flex;gap:5px;margin-top:8px}
-.vc-btn{flex:1;padding:5px;border-radius:6px;border:1px solid var(--b2);background:transparent;color:var(--t2);font-family:var(--sans);font-size:10px;cursor:pointer;transition:all .15s;text-align:center}
-.vc-btn:hover{border-color:var(--gold);color:var(--gold)}
-.vc-btn.del:hover{border-color:var(--red);color:var(--red)}
-
-/* ═══════════════════════════════════════════
-   MINI PLAYER (persistent, always visible while playing)
-═══════════════════════════════════════════ */
-#mini-player{
-  position:fixed;bottom:calc(16px + var(--sab));right:calc(16px + var(--sar));
-  width:320px;max-width:calc(100vw - 32px);
-  background:var(--s2);border:1px solid var(--b2);border-radius:16px;
-  box-shadow:0 20px 60px rgba(0,0,0,.7);
-  padding:14px 16px;z-index:900;
-  display:none;flex-direction:column;gap:8px;
-  animation:slide-up .25s cubic-bezier(.4,0,.2,1);
-}
-#mini-player.visible{display:flex!important;opacity:1!important;pointer-events:auto!important}
-@keyframes slide-up{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
-.mp-header{display:flex;align-items:center;gap:10px}
-.mp-cover{width:38px;height:52px;border-radius:6px;object-fit:cover;background:var(--s3);flex-shrink:0}
-.mp-cover-ph{width:38px;height:52px;border-radius:6px;background:var(--s3);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
-.mp-info{flex:1;min-width:0}
-.mp-title{font-size:12px;font-weight:600;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mp-chapter{font-size:10px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mp-close{width:24px;height:24px;border-radius:6px;border:1px solid var(--b2);background:transparent;color:var(--t3);cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
-.mp-close:hover{border-color:var(--red);color:var(--red)}
-.mp-controls{display:flex;align-items:center;gap:8px}
-.mp-ctrl-btn{width:32px;height:32px;border-radius:50%;border:none;background:var(--s3);color:var(--t2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;transition:all .15s;flex-shrink:0}
-.mp-ctrl-btn:hover{background:var(--s4);color:var(--t1)}
-.mp-play-btn{background:linear-gradient(135deg,var(--gold3),var(--gold));color:#000;font-weight:700}
-.mp-play-btn:hover{filter:brightness(1.1)}
-.mp-speed{font-size:10px;color:var(--t3);font-family:var(--mono);cursor:pointer;padding:3px 6px;border-radius:5px;background:var(--s3);border:1px solid var(--b1);transition:all .15s}
-.mp-speed:hover{color:var(--gold);border-color:var(--gold)}
-.mp-prog-wrap{cursor:pointer;padding:2px 0}
-.mp-prog-track{height:3px;background:var(--s4);border-radius:2px}
-.mp-prog-fill{height:100%;background:linear-gradient(90deg,var(--gold3),var(--gold));border-radius:2px;width:0;transition:width .1s linear}
-.mp-times{display:flex;justify-content:space-between;font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:3px}
-.mp-vol-row{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--t3)}
-.mp-vol-row input{flex:1;accent-color:var(--gold)}
-
-/* ═══════════════════════════════════════════
-   MODALS
-═══════════════════════════════════════════ */
-.overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:800;display:none;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px)}
-.overlay.visible{display:flex}
-.modal{background:var(--s2);border:1px solid var(--b2);border-radius:20px;width:100%;max-width:600px;max-height:90dvh;overflow-y:auto;position:relative;animation:modal-in .2s cubic-bezier(.4,0,.2,1)}
-.modal::-webkit-scrollbar{width:4px}
-.modal::-webkit-scrollbar-thumb{background:var(--s4);border-radius:2px}
-@keyframes modal-in{from{transform:scale(.96);opacity:0}to{transform:scale(1);opacity:1}}
-.modal-sm{max-width:420px}
-.modal-inner{padding:24px}
-.modal-x{position:absolute;top:16px;right:16px;width:32px;height:32px;border-radius:8px;border:1px solid var(--b2);background:transparent;color:var(--t2);cursor:pointer;font-size:14px;transition:all .15s;display:flex;align-items:center;justify-content:center}
-.modal-x:hover{border-color:var(--red);color:var(--red)}
-/* Book modal */
-.modal-hero{display:flex;gap:20px;margin-bottom:20px}
-.modal-cover-wrap{flex-shrink:0;position:relative;width:130px}
-.modal-cover-wrap img{width:130px;height:195px;object-fit:cover;border-radius:10px;display:block}
-.cover-ph{position:absolute;inset:0;border-radius:10px;display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-size:48px;font-weight:700}
-.modal-hero-info{flex:1;min-width:0}
-.m-title-display{font-family:var(--serif);font-size:22px;font-weight:600;line-height:1.3;color:var(--t1);margin:8px 0 4px}
-.m-author-display{font-size:13px;color:var(--t2);margin-bottom:12px}
-.status-select{background:var(--s3);border:1px solid var(--b1);border-radius:7px;padding:5px 10px;color:var(--t1);font-family:var(--sans);font-size:11px;outline:none;cursor:pointer}
-.status-select:focus{border-color:var(--gold)}
-.m-stars{display:flex;gap:3px;margin:8px 0}
-.star{font-size:18px;color:var(--t4);cursor:pointer;transition:all .1s}
-.star.lit{color:var(--gold)}
-.star:hover{transform:scale(1.2)}
-.m-meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
-.m-meta-item{background:var(--s3);border-radius:8px;padding:8px}
-.m-meta-label{display:block;font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);margin-bottom:2px}
-.m-meta-item span:last-child{font-size:12px;color:var(--t1)}
-.m-cat-sel{background:var(--s2);border:none;color:var(--t1);font-family:var(--sans);font-size:12px;outline:none;cursor:pointer;width:100%}
-/* Modal tabs */
-.modal-tabs{display:flex;gap:2px;background:var(--s3);border-radius:8px;padding:3px;margin-bottom:16px}
-.m-tab{flex:1;padding:7px;border-radius:6px;border:none;background:transparent;color:var(--t3);font-family:var(--sans);font-size:12px;font-weight:500;cursor:pointer;transition:all .15s}
-.m-tab.active{background:var(--s2);color:var(--t1)}
-.tab-content{display:none}
-.tab-content.active{display:block}
-.field-row{margin-bottom:14px}
-.field-textarea{width:100%;background:var(--s3);border:1px solid var(--b1);border-radius:8px;padding:10px 12px;color:var(--t1);font-family:var(--sans);font-size:13px;outline:none;resize:vertical;min-height:120px;line-height:1.6}
-.field-textarea:focus{border-color:var(--gold)}
-.m-desc-text{font-size:13px;line-height:1.8;color:var(--t2)}
-.modal-footer{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid var(--b1)}
-/* Buttons */
-.btn-primary{padding:9px 20px;border-radius:9px;border:none;background:linear-gradient(135deg,var(--gold3),var(--gold));color:#000;font-family:var(--sans);font-size:13px;font-weight:700;cursor:pointer;transition:all .15s}
-.btn-primary:hover{filter:brightness(1.1)}
-.btn-ghost{padding:9px 16px;border-radius:9px;border:1px solid var(--b2);background:transparent;color:var(--t2);font-family:var(--sans);font-size:13px;cursor:pointer;transition:all .15s}
-.btn-ghost:hover{border-color:var(--b3);color:var(--t1)}
-.btn-delete{color:var(--red);border-color:transparent}
-.btn-delete:hover{border-color:var(--red)!important;color:var(--red)!important}
-/* Category modal */
-.color-presets{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
-.cp{width:28px;height:28px;border-radius:50%;border:2px solid transparent;cursor:pointer;transition:all .15s}
-.cp.active{border-color:var(--t1);transform:scale(1.2)}
-/* API modal */
-.api-modal-title{font-family:var(--serif);font-size:22px;font-weight:600;margin-bottom:4px}
-.api-modal-sub{font-size:12px;color:var(--t2);margin-bottom:20px;line-height:1.7}
-.provider-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px}
-.pg-item{background:var(--s3);border:1.5px solid var(--b1);border-radius:10px;padding:12px 8px;text-align:center;cursor:pointer;transition:all .15s;position:relative}
-.pg-item:hover{border-color:var(--b3)}
-.pg-item.selected{border-color:var(--gold);background:var(--gold-b)}
-.pg-emoji{font-size:20px;margin-bottom:4px}
-.pg-name{font-size:11px;font-weight:700;color:var(--t1)}
-.pg-free{font-size:9px;color:var(--t3);margin-top:2px}
-.pg-dot{position:absolute;top:5px;right:6px;width:7px;height:7px;border-radius:50%;background:var(--green)}
-.provider-info-box{font-size:11px;color:var(--t2);background:var(--s3);border-radius:8px;padding:10px 13px;margin-bottom:12px;line-height:1.7;border:1px solid var(--b1)}
-/* Dropzone */
-#dropzone{display:flex;flex-direction:column;align-items:center;gap:8px;padding:20px;border:1px dashed var(--b2);border-radius:10px;cursor:pointer;text-align:center;transition:all .2s;background:var(--s3)}
-#dropzone:hover,#dropzone.drag-over{border-color:var(--gold);background:var(--gold-b)}
-.drop-icon{font-size:28px}
-#dropzone p{font-size:12px;color:var(--t2);line-height:1.6}
-/* Import progress */
-.import-progress{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:2000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(8px)}
-.progress-inner{background:var(--s2);border:1px solid var(--b2);border-radius:16px;padding:32px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:12px}
-.progress-spinner{width:40px;height:40px;border:3px solid var(--s4);border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-.progress-text{font-size:13px;color:var(--t2)}
-/* Toast */
-.toast{position:fixed;bottom:calc(90px + var(--sab));left:50%;transform:translateX(-50%) translateY(20px);background:var(--s3);border:1px solid var(--b2);border-radius:10px;padding:10px 18px;font-size:13px;color:var(--t1);z-index:3000;opacity:0;pointer-events:none;transition:all .25s;white-space:nowrap;box-shadow:0 8px 32px rgba(0,0,0,.5)}
-.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-/* Sidebar overlay (mobile) */
-.sidebar-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:19;display:none}
-.sidebar-overlay.visible{display:block}
-
-/* ═══════════════════════════════════════════
-   RESPONSIVE
-═══════════════════════════════════════════ */
-/* ── BOTTOM NAV BAR (móvil) ── */
-#bottom-nav{
-  display:none;
-  position:fixed;bottom:0;left:0;right:0;
-  height:calc(56px + env(safe-area-inset-bottom));
-  padding-bottom:env(safe-area-inset-bottom);
-  background:var(--s1);border-top:1px solid var(--b1);
-  z-index:800;
-  align-items:stretch;
-  justify-content:space-around;
-}
-.bn-item{
-  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:3px;cursor:pointer;border:none;background:transparent;
-  color:var(--t3);font-size:9px;font-weight:600;letter-spacing:.3px;
-  text-transform:uppercase;padding:0;transition:color .15s;
-  -webkit-tap-highlight-color:transparent;
-}
-.bn-item .bn-icon{font-size:20px;line-height:1}
-.bn-item.active{color:var(--gold)}
-.bn-item:hover{color:var(--t1)}
-
-@media(max-width:768px){
-  :root{--sidebar-w:280px}
-  /* Safe area — topbar */
-  #topbar{
-    padding-top:calc(24px + env(safe-area-inset-top));
-    padding-left:calc(12px + env(safe-area-inset-left));
-    padding-right:calc(12px + env(safe-area-inset-right));
-  }
-  /* Sidebar: desliza desde la izquierda */
-  #sidebar{
-    position:fixed;left:0;
-    top:0;bottom:0;
-    transform:translateX(-100%);
-    z-index:20;
-    padding-top:env(safe-area-inset-top);
-  }
-  #sidebar.open{transform:translateX(0)}
-  /* Hamburguesa: más grande y visible */
-  .menu-toggle{
-    display:flex;
-    width:44px;height:44px;
-    border-radius:10px;
-    font-size:20px;
-    border-color:var(--b2);
-    color:var(--t1);
-    flex-shrink:0;
-  }
-  .topbar-title{display:none}
-  .reader-sidebar{display:none}
-  /* Topbar: ocultar etiquetas de texto en móvil para que no se corte */
-  .topbar-btn-label{display:none}
-  #btn-export{margin-right:4px!important;padding:4px 7px!important}
-  #btn-add{padding:4px 7px!important}
-  .book-count{display:none}
-  .topbar-right{gap:4px}
-  .reader-text{padding:20px 16px;font-size:17px;line-height:1.9}
-  .reader-controls{
-    gap:6px;padding:10px 12px;
-    flex-wrap:wrap;
-    padding-bottom:calc(10px + env(safe-area-inset-bottom));
-  }
-  /* Mini player: ancho completo, encima de la bottom nav */
-  #mini-player{
-    width:calc(100vw - 24px);
-    bottom:calc(64px + env(safe-area-inset-bottom));
-    right:auto;left:50%;transform:translateX(-50%);
-    border-radius:14px;
-  }
-  /* Modales */
-  .modal-hero{flex-direction:column;align-items:center;text-align:center}
-  .slider-row{grid-template-columns:1fr}
-  .provider-grid{grid-template-columns:repeat(2,1fr)}
-  /* Grid libros: 2 columnas fijas, portadas sin solapamientos */
-  #books-grid{
-    grid-template-columns:repeat(2,1fr) !important;
-    justify-content:stretch !important;
-    gap:16px;
-    padding:16px 16px calc(72px + env(safe-area-inset-bottom));
-    align-items:start;
-  }
-  /* Content area: dejar espacio a bottom nav */
-  #content-area{
-    padding-bottom:0;
-  }
-  #main{
-    padding-bottom:calc(56px + env(safe-area-inset-bottom));
-  }
-  /* Bottom nav visible */
-  #bottom-nav{display:flex}
-  /* Sidebar bottom: espacio extra por nav */
-  .sidebar-bottom{padding-bottom:calc(16px + env(safe-area-inset-bottom))}
-}
-@media(max-width:400px){
-  #books-grid{grid-template-columns:repeat(2,1fr) !important;justify-content:stretch !important;gap:12px;padding:12px 12px calc(64px + env(safe-area-inset-bottom))}
-}
-
-/* duplicate block removed — styles consolidated above */
-
-</style>
-<script src="./jszip.min.js"></script>
-</head>
-<body>
-
-<!-- ── SIDEBAR OVERLAY (mobile) ── -->
-<div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
-
-<!-- ── APP SHELL ── -->
-<div id="app-shell">
-
-<!-- ── SIDEBAR ── -->
-<aside id="sidebar">
-  <div class="sidebar-brand">
-    <div class="brand-icon">🎧</div>
-    <div>
-      <div class="brand-name">Audioteka</div>
-      <div class="brand-sub">Biblioteca · Lector</div>
-    </div>
-  </div>
-
-  <div class="sidebar-scroll">
-    <div class="nav-section">Explorar</div>
-    <div class="nav-item active" onclick="showPanel('library','Toda la biblioteca','nav-library')" id="nav-library">
-      <span class="ni-icon">📚</span> Biblioteca
-      <span class="ni-badge" id="badge-total">0</span>
-    </div>
-    <div class="nav-item" onclick="showPanel('library','Leyendo ahora','nav-reading');filterByStatus('reading')" id="nav-reading">
-      <span class="ni-icon">📖</span> Leyendo ahora
-      <span class="ni-badge" id="badge-reading">0</span>
-    </div>
-    <div class="nav-item" onclick="showPanel('library','Leídos','nav-read');filterByStatus('read')" id="nav-read">
-      <span class="ni-icon">✅</span> Leídos
-    </div>
-    <div class="nav-item" onclick="showPanel('library','Pendientes','nav-unread');filterByStatus('unread')" id="nav-unread">
-      <span class="ni-icon">📋</span> Pendientes
-    </div>
-    
-    <div class="nav-item" onclick="showPanel('library','Favoritos','nav-fav');filterByFavorite()" id="nav-fav">
-      <span class="ni-icon">❤️</span> Favoritos
-    </div>
-    <div class="nav-divider"></div>
-    <div class="nav-section">Voz</div>
-    <div class="nav-item" onclick="showPanel('reader','Lector','nav-reader')" id="nav-reader">
-      <span class="ni-icon">🎙️</span> Lector de voz
-    </div>
-    <div class="nav-item" onclick="showPanel('synth','Sintetizar texto','nav-synth')" id="nav-synth">
-      <span class="ni-icon">✨</span> Sintetizar texto
-    </div>
-    <div class="nav-item" onclick="showPanel('voices','Voces','nav-voices')" id="nav-voices">
-      <span class="ni-icon">🎭</span> Biblioteca de voces
-    </div>
-    <div class="nav-divider"></div>
-    <div class="nav-section">Categorías</div>
-    <div id="category-list"></div>
-    <button class="add-cat-btn" onclick="openCatModal()">
-      <span>＋</span> Nueva categoría
-    </button>
-  </div>
-
-  <div class="sidebar-bottom">
-    <div class="sidebar-stats">
-      <div class="stat-item">
-        <span class="stat-val" id="stat-total">0</span>
-        <span class="stat-lbl">Total</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-val" id="stat-read">0</span>
-        <span class="stat-lbl">Leídos</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-val" id="stat-reading">0</span>
-        <span class="stat-lbl">Oyendo</span>
-      </div>
-    </div>
-    <div class="api-chip" id="theme-chip" onclick="toggleTheme()" style="margin-bottom:8px">
-      <div class="api-dot" style="background:var(--gold);box-shadow:none"></div>
-      <span class="api-name" id="theme-label">Modo Claro</span>
-    </div>
-    <div class="api-chip" id="api-chip" onclick="openApiModal()">
-      <div class="api-dot" id="api-dot"></div>
-      <span id="api-provider-badge" style="font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;opacity:.7"></span>
-      <span class="api-name" id="api-label">Conectar API de voz</span>
-    </div>
-    <div class="api-chip" onclick="clearLibrary()" style="margin-top:4px;border-color:rgba(240,68,68,.2);color:var(--red)">
-      <div class="api-dot" style="background:var(--red);box-shadow:none"></div>
-      <span class="api-name" style="color:var(--red)">Vaciar biblioteca</span>
-    </div>
-  </div>
-</aside>
-
-<!-- ── MAIN ── -->
-<main id="main">
-  <header id="topbar">
-    <button class="menu-toggle" id="menu-toggle" onclick="toggleSidebar()">☰</button>
-    <div class="topbar-title" id="topbar-title">Biblioteca</div>
-    <div class="search-wrap">
-      <svg class="search-ico" viewBox="0 0 20 20" fill="none"><circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="M13 13l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-      <input type="text" id="search-input" placeholder="Buscar título, autor…" autocomplete="off">
-      <button class="search-clear" id="search-clear" style="display:none" onclick="clearSearch()">✕</button>
-    </div>
-    <div class="topbar-right">
-      <button class="btn-ghost" id="btn-add" style="padding:4px 10px;height:28px;display:flex;align-items:center;font-size:11px;gap:5px;margin-right:4px" onclick="document.getElementById('file-input').click()">+ <span class="topbar-btn-label">Añadir</span></button>
-      <button class="btn-ghost" id="btn-export" style="padding:4px 10px;height:28px;display:flex;align-items:center;font-size:11px;gap:5px;margin-right:8px;border-color:var(--gold);color:var(--gold)" onclick="exportLibraryPage()" title="Exportar biblioteca como página web">
-        <svg viewBox="0 0 16 16" fill="currentColor" style="width:12px;height:12px"><path d="M8 1a.75.75 0 0 1 .75.75v6.19l1.97-1.97a.75.75 0 1 1 1.06 1.06L8.53 10.28a.75.75 0 0 1-1.06 0L4.22 7.03a.75.75 0 1 1 1.06-1.06L7.25 7.94V1.75A.75.75 0 0 1 8 1zM2 13.25a.75.75 0 0 1 .75-.75h10.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75z"/></svg>
-        <span class="topbar-btn-label">Exportar</span>
-      </button>
-      <span class="book-count" id="book-count"></span>
-      <div class="view-toggle">
-        <button class="view-btn active" id="view-grid" onclick="setView('grid')" title="Cuadrícula">
-          <svg viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
-        </button>
-        <button class="view-btn" id="view-list" onclick="setView('list')" title="Lista">
-          <svg viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="2" width="14" height="2" rx="1"/><rect x="1" y="7" width="14" height="2" rx="1"/><rect x="1" y="12" width="14" height="2" rx="1"/></svg>
-        </button>
-      </div>
-    </div>
-  </header>
-
-  <div id="content-area">
-
-    <!-- ── LIBRARY PANEL ── -->
-    <div class="content-panel active" id="panel-library">
-      <div class="cat-header" id="cat-header" style="display:none">
-        <div class="cat-header-dot" id="cat-header-dot"></div>
-        <div class="cat-header-title" id="cat-header-title"></div>
-        <div class="cat-header-count" id="cat-header-count"></div>
-      </div>
-      <div id="books-grid" data-view="grid"></div>
-      <div id="empty-state" class="empty-state" style="display:none">
-        <div class="empty-shelf">
-          <div class="shelf-books">
-            <div class="shelf-book b1"></div>
-            <div class="shelf-book b2"></div>
-            <div class="shelf-book b3"></div>
-            <div class="shelf-book b4"></div>
-          </div>
-          <div class="shelf-plank"></div>
-        </div>
-        <h2>Tu biblioteca está vacía</h2>
-        <p>Arrastra archivos <strong>.epub, .pdf, .txt, .docx</strong> aquí para empezar a construir tu colección</p>
-        <button class="btn-primary" id="empty-import-btn" onclick="document.getElementById('file-input').click()">Importar libros</button>
-      </div>
-      <input type="file" id="file-input" accept=".epub,.pdf,.txt,.docx,.html,.htm,.md" multiple hidden>
-    </div>
-
-    <!-- ── READER PANEL ── -->
-    <div class="content-panel" id="panel-reader">
-      <div class="reader-sidebar">
-        <div class="reader-sb-head">
-          <span>Índice</span>
-          <span id="reader-book-name" style="font-size:10px;color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px"></span>
-        </div>
-        <div class="reader-toc" id="reader-toc">
-          <div style="padding:20px;text-align:center;color:var(--t3);font-size:12px">Abre un libro para ver el índice</div>
-        </div>
-      </div>
-      <div class="reader-content">
-        <button class="ch-nav-arrow ch-nav-prev" id="ch-nav-prev" onclick="prevChapter()" title="Capítulo anterior">&#8249;</button>
-        <button class="ch-nav-arrow ch-nav-next" id="ch-nav-next" onclick="nextChapter()" title="Capítulo siguiente">&#8250;</button>
-        <div class="reader-text" id="reader-text">
-          <div class="empty-state">
-            <div style="font-size:48px">📖</div>
-            <h2>Sin libro abierto</h2>
-            <p>Selecciona un libro de tu biblioteca o arrastra un archivo aquí para empezar a leer y escuchar.</p>
-          </div>
-        </div>
-        <div class="reader-controls">
-          <label class="file-drop-btn" id="epub-drop">
-            <span>📂</span>
-            <span id="epub-label" style="overflow:hidden;text-overflow:ellipsis">Abrir documento (EPUB, PDF, TXT, DOCX…)</span>
-            <input type="file" id="epub-file" accept=".epub,.txt,.html,.htm,.pdf,.docx,.md" style="display:none" onchange="openDocument(this)">
-          </label>
-          <div class="rc-group">
-            <span class="rc-label">Voz:</span>
-            <select class="rc-select" id="reader-voice" style="min-width:100px"></select>
-          </div>
-          <div class="rc-group">
-            <span class="rc-label">Vel:</span>
-            <input type="range" class="rc-input" style="width:65px" min="0.5" max="2" step="0.1" value="1" id="read-speed" oninput="document.getElementById('read-speed-val').textContent=parseFloat(this.value).toFixed(1)+'×'" onchange="updateReaderAudioSettings()">
-            <span class="rc-label" id="read-speed-val" style="font-family:var(--mono)">1.0×</span>
-          </div>
-          <div class="rc-group">
-            <span class="rc-label">Tono:</span>
-            <input type="range" class="rc-input" style="width:65px" min="0.5" max="2" step="0.1" value="1" id="read-pitch" oninput="updatePitchLabel('read-pitch','read-pitch-val')" onchange="updateReaderAudioSettings()">
-            <span class="rc-label" id="read-pitch-val" style="font-family:var(--mono)">normal</span>
-          </div>
-          <div class="ch-nav">
-            <button class="rc-btn" id="prev-ch-btn" onclick="prevChapter()" disabled>⏮</button>
-            <span class="ch-counter" id="ch-counter">— / —</span>
-            <button class="rc-btn" id="next-ch-btn" onclick="nextChapter()" disabled>⏭</button>
-          </div>
-          <button class="rc-btn primary" id="read-btn" onclick="readCurrentChapter()">▶ Leer</button>
-          <button class="rc-btn danger" id="stop-btn" onclick="stopReading()" style="display:none">⏹ Parar</button>
-        </div>
-        <div class="reader-player" id="reader-player-wrap" style="display:none">
-          <div class="audio-player">
-            <button class="play-btn" id="reader-play" onclick="togglePlay('reader')">▶</button>
-            <div class="prog-wrap" onclick="seekAudio('reader',event)">
-              <div class="prog-track"><div class="prog-fill" id="reader-pfill"></div></div>
-              <div class="prog-times"><span id="reader-cur">0:00</span><span id="reader-dur">0:00</span></div>
-            </div>
-            <a class="dl-btn" id="reader-dl" title="Descargar">⬇</a>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ── SYNTH PANEL ── -->
-    <div class="content-panel" id="panel-synth">
-      <div class="panel-scroll" style="max-width:760px;margin:0 auto;width:100%;display:flex;flex-direction:column;gap:16px">
-        <div class="provider-banner" id="provider-banner">
-          <div class="prov-info">
-            <span style="font-size:20px" id="banner-emoji">🌐</span>
-            <div>
-              <div class="prov-name" id="banner-name">Sin proveedor</div>
-              <div class="prov-sub" id="banner-free"></div>
-            </div>
-          </div>
-          <button class="btn-ghost" style="font-size:11px;padding:6px 12px" onclick="openApiModal()">Cambiar →</button>
-        </div>
-        <div class="card">
-          <div class="field-label">Texto a convertir</div>
-          <textarea class="field-input" id="synth-text" rows="6" placeholder="Escribe o pega el texto que quieres escuchar…"></textarea>
-          <div class="char-info" style="margin-top:4px" id="synth-char-count">0 caracteres</div>
-        </div>
-        <div class="card">
-          <div class="field-label">Voz</div>
-          <select class="field-select" id="synth-voice" style="margin-bottom:14px"></select>
-          <div class="slider-row">
-            <div class="slider-col">
-              <div class="field-label">Velocidad <span class="slider-val" id="synth-speed-val">1×</span></div>
-              <input type="range" min="0.5" max="2" step="0.05" value="1" id="synth-speed" oninput="syncSliderLabel('synth-speed','synth-speed-val','×')">
-            </div>
-            <div class="slider-col">
-              <div class="field-label">Tono <span class="slider-val" id="synth-pitch-val">normal</span></div>
-              <input type="range" min="0.5" max="2" step="0.05" value="1" id="synth-pitch" oninput="updatePitchLabel('synth-pitch','synth-pitch-val')">
-            </div>
-            <div class="slider-col">
-              <div class="field-label">Volumen <span class="slider-val" id="synth-vol-val">100%</span></div>
-              <input type="range" min="0" max="1" step="0.05" value="1" id="synth-vol" oninput="document.getElementById('synth-vol-val').textContent=Math.round(this.value*100)+'%'">
-            </div>
-          </div>
-        </div>
-        <input type="hidden" id="synth-model" value="eleven_multilingual_v2">
-        <button class="gen-btn" id="synth-btn" onclick="synthesize()">🎙️ Generar audio</button>
-        <div class="gen-progress" id="synth-progress" style="display:none">
-          <div class="gen-progress-fill indeterminate" id="synth-progress-fill"></div>
-        </div>
-        <div id="synth-result" style="display:none">
-          <div class="audio-player">
-            <button class="play-btn" id="synth-play" onclick="togglePlay('synth')">▶</button>
-            <div class="prog-wrap" onclick="seekAudio('synth',event)">
-              <div class="prog-track"><div class="prog-fill" id="synth-pfill"></div></div>
-              <div class="prog-times"><span id="synth-cur">0:00</span><span id="synth-dur">0:00</span></div>
-            </div>
-            <a class="dl-btn" id="synth-dl" title="Descargar">⬇</a>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ── VOICES PANEL ── -->
-    <div class="content-panel" id="panel-voices">
-      <div class="panel-scroll">
-        <div style="max-width:960px;margin:0 auto">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-            <div style="font-size:11px;font-weight:600;letter-spacing:.7px;text-transform:uppercase;color:var(--t3)">Biblioteca de voces</div>
-            <button class="btn-ghost" style="font-size:12px;padding:6px 12px" onclick="loadVoices()">↻ Actualizar</button>
-          </div>
-          <div class="voice-grid" id="voices-grid">
-            <div class="empty-state" style="grid-column:1/-1">
-              <div style="font-size:40px">🎭</div>
-              <h2>Sin voces</h2>
-              <p>Conecta tu API key y pulsa Actualizar para ver las voces disponibles.</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-  </div>
-</main>
-</div>
-
-<!-- ── BOTTOM NAV BAR (móvil) ── -->
-<nav id="bottom-nav" role="navigation" aria-label="Navegación principal">
-  <button class="bn-item active" id="bn-library" onclick="bnNav('library','Biblioteca','nav-library')" aria-label="Biblioteca">
-    <span class="bn-icon">📚</span>
-    <span>Biblioteca</span>
-  </button>
-  <button class="bn-item" id="bn-reading" onclick="bnNav('library','Leyendo','nav-reading');filterByStatus('reading')" aria-label="Leyendo">
-    <span class="bn-icon">📖</span>
-    <span>Leyendo</span>
-  </button>
-  <button class="bn-item" id="bn-reader" onclick="bnNav('reader','Lector','nav-reader')" aria-label="Lector de voz">
-    <span class="bn-icon">🎙️</span>
-    <span>Voz</span>
-  </button>
-  <button class="bn-item" id="bn-synth" onclick="bnNav('synth','Sintetizar','nav-synth')" aria-label="Sintetizar">
-    <span class="bn-icon">✨</span>
-    <span>Sintetizar</span>
-  </button>
-</nav>
-
-<!-- ═══════════════════════════════════════════
-   MINI PLAYER
-═══════════════════════════════════════════ -->
-<div id="mini-player">
-  <div class="mp-header">
-    <div class="mp-cover-ph" id="mp-cover-ph">📖</div>
-    <img class="mp-cover" id="mp-cover" src="" alt="" style="display:none">
-    <div class="mp-info">
-      <div class="mp-title" id="mp-book-title">—</div>
-      <div class="mp-chapter" id="mp-chapter">—</div>
-    </div>
-    <button class="mp-close" onclick="closeMiniPlayer()">✕</button>
-  </div>
-  <div class="mp-prog-wrap" onclick="seekMiniPlayer(event)">
-    <div class="mp-prog-track"><div class="mp-prog-fill" id="mp-prog-fill"></div></div>
-    <div class="mp-times"><span id="mp-cur">0:00</span><span id="mp-dur">0:00</span></div>
-  </div>
-  <div class="mp-controls">
-    <button class="mp-ctrl-btn" onclick="prevChapter()" title="Capítulo anterior">⏮</button>
-    <button class="mp-ctrl-btn mp-play-btn" id="mp-play-btn" onclick="toggleMiniPlay()">▶</button>
-    <button class="mp-ctrl-btn" onclick="nextChapter()" title="Capítulo siguiente">⏭</button>
-    <button class="mp-ctrl-btn" onclick="skip(-30)" title="Retroceder 30s">◀◀</button>
-    <button class="mp-ctrl-btn" onclick="skip(30)" title="Avanzar 30s">▶▶</button>
-    <span class="mp-speed" id="mp-speed-btn" onclick="cycleSpeed()">1×</span>
-  </div>
-  <div class="mp-vol-row">
-    <span>🔈</span>
-    <input type="range" min="0" max="1" step="0.05" value="1" id="mp-vol" oninput="setMiniVolume(this.value)">
-    <span>🔊</span>
-  </div>
-</div>
-
-<!-- ═══════════════════════════════════════════
-   OVERLAYS & MODALS
-═══════════════════════════════════════════ -->
-
-<!-- Drop overlay (full library area) -->
-<div class="overlay" id="drop-overlay" style="z-index:50;background:rgba(8,8,16,.85)">
-  <div style="text-align:center;color:var(--gold)">
-    <div style="font-size:64px;margin-bottom:12px">📂</div>
-    <div style="font-family:var(--serif);font-size:28px;font-weight:600">Suelta aquí tus libros</div>
-    <div style="font-size:14px;color:var(--t2);margin-top:8px">EPUB · PDF · TXT · DOCX · HTML · MD</div>
-  </div>
-</div>
-
-<!-- Book modal -->
-<div class="overlay" id="book-overlay" onclick="closeBookModal(event)">
-  <div class="modal" onclick="event.stopPropagation()">
-    <div class="modal-inner">
-      <button class="modal-x" onclick="closeBookModal()">✕</button>
-      <div class="modal-hero">
-        <div class="modal-cover-wrap">
-          <img id="m-cover-img" src="" alt="" style="display:none">
-          <div id="m-cover-placeholder" class="cover-ph"><span id="m-initial"></span></div>
-        </div>
-        <div class="modal-hero-info">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-            <select id="m-status" class="status-select" onchange="onStatusChange()">
-              <option value="unread">📋 Pendiente</option>
-              <option value="reading">📖 Leyendo</option>
-              <option value="read">✅ Leído</option>
-            </select>
-            <span class="badge gold" id="m-cat-badge"></span>
-          </div>
-          <h2 class="m-title-display" id="m-title-display"></h2>
-          <p class="m-author-display" id="m-author-display"></p>
-          <div id="m-stars" class="m-stars">
-            <span class="star" data-v="1">★</span><span class="star" data-v="2">★</span>
-            <span class="star" data-v="3">★</span><span class="star" data-v="4">★</span>
-            <span class="star" data-v="5">★</span>
-          </div>
-          <div class="m-meta-grid">
-            <div class="m-meta-item"><span class="m-meta-label">Editorial</span><span id="m-publisher">—</span></div>
-            <div class="m-meta-item"><span class="m-meta-label">Idioma</span><span id="m-lang">—</span></div>
-            <div class="m-meta-item"><span class="m-meta-label">Añadido</span><span id="m-added">—</span></div>
-            <div class="m-meta-item"><span class="m-meta-label">Categoría</span>
-              <select id="m-category" class="m-cat-sel"></select>
-            </div>
-          </div>
-          <div style="margin-top:10px">
-            <div style="font-size:9px;color:var(--t3);margin-bottom:4px">ÚLTIMA ESCUCHA</div>
-            <div style="font-size:11px;color:var(--t2)" id="m-last-listen">—</div>
-          </div>
-        </div>
-      </div>
-      <div class="modal-body">
-        <div class="modal-tabs">
-          <button class="m-tab active" data-tab="edit" onclick="switchTab(this,'edit')">Editar</button>
-          <button class="m-tab" data-tab="notes" onclick="switchTab(this,'notes')">Notas</button>
-          <button class="m-tab" data-tab="desc" onclick="switchTab(this,'desc')">Sinopsis</button>
-        </div>
-        <div id="tab-edit" class="tab-content active">
-          <div class="field-row">
-            <label class="field-label">Título</label>
-            <input type="text" id="m-title-input" class="field-input">
-          </div>
-          <div class="field-row">
-            <label class="field-label">Autor</label>
-            <input type="text" id="m-author-input" class="field-input">
-          </div>
-        </div>
-        <div id="tab-notes" class="tab-content">
-          <textarea id="m-notes" class="field-textarea" placeholder="Tus apuntes, citas favoritas, reflexiones…"></textarea>
-        </div>
-        <div id="tab-desc" class="tab-content">
-          <p id="m-desc" class="m-desc-text"></p>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn-ghost btn-delete" id="modal-delete" onclick="deleteCurrentBook()">🗑 Eliminar</button>
-        <button class="btn-ghost" id="m-favorite" onclick="toggleFavorite()">🤍 Favorito</button>
-        <button class="btn-ghost" onclick="openInReader()">▶ Leer en voz alta</button>
-        <button class="btn-primary" onclick="saveBookModal()">Guardar</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Category modal -->
-<div class="overlay" id="cat-overlay" onclick="closeCatModal(event)">
-  <div class="modal modal-sm" onclick="event.stopPropagation()">
-    <div class="modal-inner">
-      <button class="modal-x" onclick="closeCatModal()">✕</button>
-      <h2 style="font-family:var(--serif);font-size:22px;font-weight:600;margin-bottom:16px">Nueva categoría</h2>
-      <div class="field-row">
-        <label class="field-label">Nombre</label>
-        <input type="text" id="cat-name" class="field-input" placeholder="Ej: Psicología, Filosofía…">
-      </div>
-      <div class="field-row">
-        <label class="field-label">Color</label>
-        <div class="color-presets" id="color-presets">
-          <button class="cp active" data-color="#d4a843" style="background:#d4a843"></button>
-          <button class="cp" data-color="#6366f1" style="background:#6366f1"></button>
-          <button class="cp" data-color="#10b981" style="background:#10b981"></button>
-          <button class="cp" data-color="#f43f5e" style="background:#f43f5e"></button>
-          <button class="cp" data-color="#f97316" style="background:#f97316"></button>
-          <button class="cp" data-color="#06b6d4" style="background:#06b6d4"></button>
-          <button class="cp" data-color="#a855f7" style="background:#a855f7"></button>
-          <button class="cp" data-color="#ec4899" style="background:#ec4899"></button>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn-primary" onclick="saveCat()">Crear categoría</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- API modal -->
-<div class="overlay" id="api-overlay" onclick="closeApiModal(event)">
-  <div class="modal" onclick="event.stopPropagation()" style="max-width:500px">
-    <div class="modal-inner">
-      <button class="modal-x" onclick="closeApiModal()">✕</button>
-      <div class="api-modal-title">🔌 Proveedor de Voz</div>
-      <div class="api-modal-sub">Elige tu proveedor TTS. Web Speech es gratis y funciona sin registro. Los demás ofrecen mayor calidad.</div>
-      <div class="provider-grid" id="provider-grid"></div>
-      <div class="provider-info-box" id="provider-info"></div>
-      <div style="position:relative;margin-bottom:8px" id="api-key-wrap">
-        <input class="field-input" type="password" id="api-key-input" placeholder="Pega tu API key aquí…" style="padding-right:60px">
-        <span onclick="toggleKeyVis()" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--t2);cursor:pointer">👁 ver</span>
-      </div>
-      <div id="extra-field-wrap" style="display:none;margin-bottom:8px">
-        <input class="field-input" type="text" id="api-extra-input" placeholder="">
-      </div>
-      <div style="font-size:10px;color:var(--t3);margin-bottom:16px" id="key-link"></div>
-      <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn-ghost" onclick="closeApiModal()">Cancelar</button>
-        <button class="btn-primary" onclick="saveApiKey()">Guardar y conectar</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Import progress -->
-<div class="import-progress" id="import-progress" style="display:none">
-  <div class="progress-inner">
-    <div class="progress-spinner"></div>
-    <p class="progress-text" id="progress-msg">Procesando…</p>
-  </div>
-</div>
-
-<!-- Toast -->
-<div class="toast" id="toast"></div>
-
 <script>
 // ═══════════════════════════════════════════
 //  PROVIDERS CONFIG
@@ -1209,12 +70,6 @@ let selectedProviderInModal = currentProvider;
 // Reader/player state
 let epubChapters = [];
 let currentChapter = 0;
-let currentParaIndex = 0;
-let currentCharOffset = 0;
-let currentTotalParas = 0;
-let isCurrentlyReading = false;
-let currentReadSession = 0;
-let activeUtterance = null;
 let currentEpubKey = '';
 let currentEpubBookId = null;
 let audioElements = {};
@@ -1227,13 +82,6 @@ let speedIdx = 1;
 //  INIT
 // ═══════════════════════════════════════════
 function init(){
-  // Load Theme
-  if(localStorage.getItem('audioteka_theme')==='light'){
-    document.body.classList.add('light-theme');
-    const lbl=document.getElementById('theme-label');
-    if(lbl) lbl.textContent='Modo Oscuro';
-  }
-
   // Migrate old data
   if(!apiKeys.elevenlabs && localStorage.getItem('voz_apikey'))
     apiKeys.elevenlabs = localStorage.getItem('voz_apikey');
@@ -1257,7 +105,6 @@ function init(){
   renderSidebar();
   renderBooks();
   // Load covers from IDB asynchronously (covers are not stored in localStorage)
-  // Precargar biblioteca si es la primera vez
   loadCoversFromIDB();
   updateStats();
   updateApiStatus();
@@ -1325,21 +172,17 @@ function init(){
 // ═══════════════════════════════════════════
 //  PANEL NAVIGATION
 // ═══════════════════════════════════════════
-function showPanel(name, title='', activeNavId=''){
+function showPanel(name, title=''){
   document.querySelectorAll('.content-panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   const panel = document.getElementById('panel-'+name);
   if(panel) panel.classList.add('active');
-  
-  const targetNavId = activeNavId || 'nav-'+name;
-  const nav = document.getElementById(targetNavId);
+  const nav = document.getElementById('nav-'+name);
   if(nav) nav.classList.add('active');
-  
   document.getElementById('topbar-title').textContent = title || name;
   closeSidebar();
-  
-  // Reset library filter when showing whole library
-  if(name==='library' && (targetNavId === 'nav-library' || !title)){
+  // Reset library filter when showing library
+  if(name==='library'&&!title){
     currentFilter.status=null;
     currentFilter.catId=null;
     currentFilter.favorite=false;
@@ -1348,26 +191,10 @@ function showPanel(name, title='', activeNavId=''){
   }
 }
 
-// Bottom nav bar — sincroniza con showPanel y marca el ítem activo
-function bnNav(panelName, title, navId){
-  showPanel(panelName, title, navId);
-  // Actualizar estados activos de la bottom nav
-  const map = {
-    'nav-library':'bn-library',
-    'nav-reading':'bn-reading',
-    'nav-reader':'bn-reader',
-    'nav-synth':'bn-synth'
-  };
-  document.querySelectorAll('.bn-item').forEach(b=>b.classList.remove('active'));
-  const bnId = map[navId];
-  if(bnId){ const el=document.getElementById(bnId); if(el) el.classList.add('active'); }
-}
-
-
 function showCategoryPanel(catId){
   const cat = categories.find(c=>c.id===catId);
   if(!cat) return;
-  showPanel('library',cat.name, 'nav-cat-'+catId);
+  showPanel('library',cat.name);
   currentFilter.status=null;
   currentFilter.catId=catId;
   const header = document.getElementById('cat-header');
@@ -1392,13 +219,6 @@ function renderSidebar(){
       <span class="ni-badge">${count}</span>
     </div>`;
   }).join('');
-}
-
-function toggleTheme(){
-  const isLight=document.body.classList.toggle('light-theme');
-  const lbl=document.getElementById('theme-label');
-  if(lbl) lbl.textContent=isLight?'Modo Oscuro':'Modo Claro';
-  localStorage.setItem('audioteka_theme', isLight?'light':'dark');
 }
 
 function toggleSidebar(){
@@ -1732,11 +552,7 @@ function openBookModal(bookId){
     categories.map(c=>`<option value="${c.id}" ${book.catId===c.id?'selected':''}>${c.name}</option>`).join('');
 
   updateStars(book.rating||0);
-  document.querySelectorAll('.m-tab').forEach(t=>t.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
-  const firstTab = document.querySelector('.m-tab[data-tab="edit"]');
-  if(firstTab) firstTab.classList.add('active');
-  document.getElementById('tab-edit')?.classList.add('active');
+  switchTab(document.querySelector('.m-tab.active'),'edit');
   document.getElementById('book-overlay').classList.add('visible');
 }
 
@@ -1785,39 +601,6 @@ function deleteCurrentBook(){
   document.getElementById('book-overlay').classList.remove('visible');
   toast('🗑 Libro eliminado');
   currentModalBook=null;
-}
-
-async function clearLibrary(){
-  if(!confirm('¿Vaciar toda la biblioteca? Se perderán todos los libros y progreso.')) return;
-  if(!confirm('¿Estás seguro? Esta acción no se puede deshacer.')) return;
-  // Clear IndexedDB
-  const db=await getIDB();
-  const tx=db.transaction('files','readwrite');
-  tx.objectStore('files').clear();
-  await new Promise((res,rej)=>{tx.oncomplete=res;tx.onerror=rej;});
-  // Clear localStorage
-  const keys=[
-    'atk_books','atk_cats','atk_deleted',
-    'voz_provider','voz_apikeys','voz_selected',
-    'atk_view','audioteka_theme'
-  ];
-  keys.forEach(k=>localStorage.removeItem(k));
-  // Clear chapter/para positions for all keys
-  for(let i=localStorage.length-1;i>=0;i--){
-    const k=localStorage.key(i);
-    if(k&&(k.startsWith('atk_ch_')||k.startsWith('atk_chtotal_')||k.startsWith('atk_para_')||k.startsWith('atk_charoff_')||k.startsWith('atk_scroll_')||k.startsWith('cover_')))
-      localStorage.removeItem(k);
-  }
-  // Reset state
-  books=[];
-  categories=[];
-  saveBooks();
-  saveCategories();
-  renderBooks();
-  updateStats();
-  document.getElementById('book-overlay')?.classList.remove('visible');
-  hideMiniPlayer();
-  toast('🗑 Biblioteca vaciada');
 }
 
 async function openInReader(){
@@ -2031,7 +814,7 @@ async function openDocumentFromBuffer(filename, buf, fileObj){
       const pdfjsLib=window['pdfjs-dist/build/pdf']||window.pdfjsLib;
       if(!pdfjsLib) throw new Error('No se pudo cargar el lector de PDF');
       pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-      const pdfBuf=buf||await fileObj.arrayBuffer();
+      const pdfBuf=buf||await file.arrayBuffer();
       const pdf=await pdfjsLib.getDocument({data:pdfBuf}).promise;
       let pages=[];
       for(let p=1;p<=pdf.numPages;p++){
@@ -2043,22 +826,22 @@ async function openDocumentFromBuffer(filename, buf, fileObj){
       const fullText=pages.join('\n\n');
       if(!fullText) throw new Error('El PDF no contiene texto extraíble');
       epubChapters=textToChapters(fullText,4000);
-      currentEpubKey=filename.replace(/[^a-z0-9]/gi,'_').toLowerCase();
+      currentEpubKey=file.name.replace(/[^a-z0-9]/gi,'_').toLowerCase();
       finishLoad();
 
     } else if(name.endsWith('.docx')){
       await loadLib('https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js');
       if(typeof mammoth==='undefined') throw new Error('No se pudo cargar mammoth');
-      const docxBuf=buf||await fileObj.arrayBuffer();
+      const docxBuf=buf||await file.arrayBuffer();
       const result=await mammoth.extractRawText({arrayBuffer:docxBuf});
       if(!result.value.trim()) throw new Error('DOCX vacío');
       epubChapters=textToChapters(result.value);
-      currentEpubKey=filename.replace(/[^a-z0-9]/gi,'_').toLowerCase();
+      currentEpubKey=file.name.replace(/[^a-z0-9]/gi,'_').toLowerCase();
       finishLoad();
 
     } else if(name.endsWith('.epub')){
-      // JSZip embebido, no necesita carga
-      const epubBuf=buf||await fileObj.arrayBuffer();
+      await loadLib('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+      const epubBuf=buf||await file.arrayBuffer();
       const zip=await JSZip.loadAsync(epubBuf);
       const cont=zip.file('META-INF/container.xml');
       if(!cont) throw new Error('No es un EPUB válido');
@@ -2067,94 +850,61 @@ async function openDocumentFromBuffer(filename, buf, fileObj){
       if(!opfPath) throw new Error('Falta manifiesto OPF');
       const opfText=await zip.file(opfPath).async('text');
       const opfDir=opfPath.includes('/')?opfPath.substring(0,opfPath.lastIndexOf('/')+1):'';
-      // Parsear OPF con regex para evitar problemas de namespace XML en querySelector
+      const opfDoc=new DOMParser().parseFromString(opfText,'text/xml');
       const manifest={};
-      const itemRe=/<item\s[^>]*id="([^"]+)"[^>]*href="([^"]+)"[^>]*(?:media-type="([^"]*)")?[^>]*\/>/g;
-      let m;
-      while((m=itemRe.exec(opfText))!==null){
-        manifest[m[1]]={href:m[2],type:m[3]||''};
-      }
-      // También capturar items con media-type antes del href
-      const itemRe2=/<item\s[^>]*media-type="([^"]*)"[^>]*id="([^"]+)"[^>]*href="([^"]+)"[^>]*\/>/g;
-      while((m=itemRe2.exec(opfText))!==null){
-        if(!manifest[m[2]]) manifest[m[2]]={href:m[3],type:m[1]||''};
-      }
-      const spineIds=[...opfText.matchAll(/<itemref[^>]+idref="([^"]+)"/g)].map(x=>x[1]).filter(Boolean);
+      opfDoc.querySelectorAll('manifest item').forEach(item=>{
+        manifest[item.getAttribute('id')]={href:item.getAttribute('href'),type:item.getAttribute('media-type')||''};
+      });
+      const spineIds=[...opfDoc.querySelectorAll('spine itemref')].map(i=>i.getAttribute('idref')).filter(Boolean);
 
       function epubNodeToText(node){
-        try{ ['script','style','img','svg','figure','nav'].forEach(tag=>node.querySelectorAll(tag).forEach(el=>el.remove())); }catch(e){}
-        const lines=[];
-        function walk(n,buf){
-          if(n.nodeType===3){ return buf+n.textContent.replace(/\s+/g,' '); }
-          if(n.nodeType!==1) return buf;
-          const tag=n.tagName.toLowerCase();
-          const isBlock='p div li tr blockquote section article h1 h2 h3 h4 h5 h6 br'.split(' ').includes(tag);
-          if(isBlock&&buf.trim()){lines.push(buf.trim());buf='';}
-          for(const c of n.childNodes) buf=walk(c,buf);
-          if(isBlock&&buf.trim()){lines.push(buf.trim());buf='';}
-          return buf;
+        ['script','style','img','svg','figure','nav'].forEach(tag=>node.querySelectorAll(tag).forEach(el=>el.remove()));
+        let text='';
+        function walk(n){
+          if(n.nodeType===3){text+=n.textContent;}
+          else if(n.nodeType===1){
+            const tag=n.tagName.toLowerCase();
+            const block=['p','div','li','h1','h2','h3','h4','h5','h6','br','tr','blockquote'].includes(tag);
+            if(block) text+='\n';
+            for(const child of n.childNodes) walk(child);
+            if(block) text+='\n';
+          }
         }
-        const tail=walk(node,'');
-        if(tail.trim()) lines.push(tail.trim());
-        // Fusionar lineas muy cortas (numeros, titulos solos) con la siguiente
-        const out=[];
-        for(let i=0;i<lines.length;i++){
-          const l=lines[i];
-          if(!l) continue;
-          if(l.length<50 && i<lines.length-1 && lines[i+1]){ lines[i+1]=l+' '+lines[i+1]; }
-          else { out.push(l); }
-        }
-        return out.join('\n');
+        walk(node);
+        return text.replace(/[\n]{3,}/g,'\n\n').trim();
       }
 
-      // Parsear todos los archivos del spine
-      const rawChapters=[];
-      for(const id of spineIds){
-        try{
-          const item=manifest[id];
-          if(!item) continue;
-          if(item.type&&!item.type.includes('html')&&!item.type.includes('xml')) continue;
-          const fullPath=opfDir+item.href;
-          const decoded=decodeURIComponent(item.href);
-          const f=zip.file(fullPath)||zip.file(opfDir+decoded)||zip.file(item.href)||zip.file(decoded)||
-            Object.values(zip.files).find(zf=>zf.name.endsWith('/'+item.href)||zf.name.endsWith('/'+decoded));
-          if(!f) continue;
-          const html=await f.async('text');
-          const doc=new DOMParser().parseFromString(html,'text/html');
-          const bodyText=doc.body?.textContent?.trim()||'';
-          if(bodyText.length<20) continue;
-          const navEls=doc.querySelectorAll('nav');
-          const isNav=[...navEls].some(n=>{const t=n.getAttribute('epub:type')||n.getAttribute('type')||'';return t.includes('toc')||t.includes('landmarks');});
-          if(isNav&&bodyText.length<500) continue;
-          const titleEl=doc.querySelector('h1,h2,h3')||doc.querySelector('title');
-          const title=titleEl?.textContent?.trim()||('Capitulo '+(rawChapters.length+1));
-          const plainText=epubNodeToText(doc.body||doc.documentElement);
-          if(!plainText.trim()) continue;
-          rawChapters.push({title,content:plainText});
-        }catch(e){ console.warn('skip chapter:',e); continue; }
-      }
-
-      // Consolidar capitulos cortos
       epubChapters=[];
-      let chBuf=null;
-      for(const ch of rawChapters){
-        if(!chBuf){ chBuf={title:ch.title,content:ch.content}; }
-        else {
-          chBuf.content+='\n'+ch.content;
-          if(chBuf.content.length>=800){ epubChapters.push(chBuf); chBuf=null; }
-        }
+      for(const id of spineIds){
+        const item=manifest[id];
+        if(!item) continue;
+        if(item.type&&!item.type.includes('html')&&!item.type.includes('xml')) continue;
+        const fullPath=opfDir+item.href;
+        const decoded=decodeURIComponent(item.href);
+        const f=zip.file(fullPath)||zip.file(opfDir+decoded)||zip.file(item.href)||zip.file(decoded)||
+          Object.values(zip.files).find(zf=>zf.name.endsWith('/'+item.href)||zf.name.endsWith('/'+decoded));
+        if(!f) continue;
+        const html=await f.async('text');
+        const doc=new DOMParser().parseFromString(html,'text/html');
+        const bodyText=doc.body?.textContent?.trim()||'';
+        if(bodyText.length<50) continue;
+        const navEls=doc.querySelectorAll('nav');
+        const isNav=[...navEls].some(n=>{const t=n.getAttribute('epub:type')||n.getAttribute('type')||'';return t.includes('toc')||t.includes('landmarks');});
+        if(isNav&&bodyText.length<500) continue;
+        const titleEl=doc.querySelector('h1,h2,h3')||doc.querySelector('title');
+        const title=titleEl?.textContent?.trim()||('Capítulo '+(epubChapters.length+1));
+        const plainText=epubNodeToText(doc.body||doc.documentElement);
+        if(!plainText.trim()) continue;
+        epubChapters.push({title,content:plainText});
       }
-      if(chBuf) epubChapters.push(chBuf);
-            if(!epubChapters.length) throw new Error('No se pudo extraer texto del EPUB');
+      if(!epubChapters.length) throw new Error('No se pudo extraer texto del EPUB');
       currentEpubKey=filename.replace(/[^a-z0-9]/gi,'_').toLowerCase();
       finishLoad();
     } else {
       throw new Error('Formato no soportado. Usa EPUB, PDF, TXT, DOCX, HTML o MD.');
     }
   }catch(err){
-    console.error('openDocument error:',err);
-    const msg=err.message||String(err)||'Error desconocido';
-    area.innerHTML=`<div class="empty-state"><div style="font-size:36px">⚠️</div><h2>Error leyendo el documento</h2><p>${msg}</p></div>`;
+    area.innerHTML=`<div class="empty-state"><div style="font-size:36px">⚠️</div><h2>Error leyendo el documento</h2><p>${err.message}</p></div>`;
     label.textContent='Abrir documento (EPUB, PDF, TXT, DOCX…)';
     drop.classList.remove('has-file');
   }
@@ -2187,24 +937,16 @@ function finishLoad(){
 function _showChapterSilent(idx){
   if(idx<0||idx>=epubChapters.length) idx=0;
   currentChapter=idx;
-  currentCharOffset=0;
   const ch=epubChapters[idx];
+  // Don't overwrite the saved position on initial load
   const area=document.getElementById('reader-text');
-  let paraIdx = 0;
   area.innerHTML=ch.content.split('\n').map(line=>{
     const t=line.trim();
     if(!t) return '';
-    if(t.match(/^#{1,3}\s/)) return `<h2 class="reader-para" data-index="${paraIdx++}" onclick="jumpToParagraph(${paraIdx-1})">${escHtml(t.replace(/^#+\s*/,''))}</h2>`;
-    return `<p class="reader-para" data-index="${paraIdx++}" onclick="jumpToParagraph(${paraIdx-1})">${escHtml(t)}</p>`;
+    if(t.match(/^#{1,3}\s/)) return `<h2>${escHtml(t.replace(/^#+\s*/,''))}</h2>`;
+    return `<p>${escHtml(t)}</p>`;
   }).join('');
-  currentTotalParas = paraIdx;
-
-  const savedPara = localStorage.getItem('atk_para_' + currentEpubKey + '_' + currentChapter);
-  currentParaIndex = savedPara !== null ? parseInt(savedPara) : 0;
-
-  highlightParagraph(currentParaIndex);
-  restoreScrollPosition();
-
+  area.scrollTop=0;
   document.querySelectorAll('.reader-toc-item').forEach((el,i)=>el.classList.toggle('active',i===idx));
   document.getElementById('ch-counter').textContent=(idx+1)+' / '+epubChapters.length;
   document.getElementById('prev-ch-btn').disabled=idx<=0;
@@ -2223,33 +965,25 @@ function showChapter(idx){
   if(idx<0||idx>=epubChapters.length) return;
   stopReading();
   currentChapter=idx;
-  currentCharOffset=0;
   const ch=epubChapters[idx];
   if(currentEpubKey) try{localStorage.setItem('atk_ch_'+currentEpubKey,idx);}catch(e){}
-
   const area=document.getElementById('reader-text');
-  let paraIdx = 0;
   area.innerHTML=ch.content.split('\n').map(line=>{
     const t=line.trim();
     if(!t) return '';
-    if(t.match(/^#{1,3}\s/)) return `<h2 class="reader-para" data-index="${paraIdx++}" onclick="jumpToParagraph(${paraIdx-1})">${escHtml(t.replace(/^#+\s*/,''))}</h2>`;
-    return `<p class="reader-para" data-index="${paraIdx++}" onclick="jumpToParagraph(${paraIdx-1})">${escHtml(t)}</p>`;
+    if(t.match(/^#{1,3}\s/)) return `<h2>${escHtml(t.replace(/^#+\s*/,''))}</h2>`;
+    return `<p>${escHtml(t)}</p>`;
   }).join('');
-  currentTotalParas = paraIdx;
-
-  const savedPara = localStorage.getItem('atk_para_' + currentEpubKey + '_' + currentChapter);
-  currentParaIndex = savedPara !== null ? parseInt(savedPara) : 0;
-
-  highlightParagraph(currentParaIndex);
-  restoreScrollPosition();
-
+  area.scrollTop=0;
   document.querySelectorAll('.reader-toc-item').forEach((el,i)=>el.classList.toggle('active',i===idx));
   document.getElementById('ch-counter').textContent=(idx+1)+' / '+epubChapters.length;
   document.getElementById('prev-ch-btn').disabled=idx<=0;
   document.getElementById('next-ch-btn').disabled=idx>=epubChapters.length-1;
+  // Update mini player chapter
   if(currentEpubBookId){
     document.getElementById('mp-chapter').textContent=ch.title;
   }
+  // Update progress
   renderBooks();
 }
 
@@ -2259,219 +993,6 @@ function nextChapter(){ if(currentChapter<epubChapters.length-1) showChapter(cur
 // ═══════════════════════════════════════════
 //  TTS / READING
 // ═══════════════════════════════════════════
-function highlightParagraph(idx) {
-  const paras = document.querySelectorAll('.reader-para');
-  paras.forEach(el => {
-    const pIdx = parseInt(el.getAttribute('data-index'));
-    if (pIdx === idx) {
-      el.classList.add('speaking');
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    } else {
-      el.classList.remove('speaking');
-    }
-  });
-}
-
-function saveParaPosition(){
-  if(!currentEpubKey) return;
-  const key='atk_para_'+currentEpubKey+'_'+currentChapter;
-  try{
-    localStorage.setItem(key, currentParaIndex);
-  }catch(e){}
-  try{
-    const charKey='atk_charoff_'+currentEpubKey+'_'+currentChapter+'_'+currentParaIndex;
-    if(currentCharOffset > 0){
-      localStorage.setItem(charKey, currentCharOffset);
-    } else {
-      localStorage.removeItem(charKey);
-    }
-  }catch(e){}
-}
-
-function jumpToParagraph(idx) {
-  currentParaIndex = idx;
-  currentCharOffset = 0;
-  highlightParagraph(idx);
-  saveParaPosition();
-  if (isCurrentlyReading && currentProvider === 'webspeech') {
-    playWebSpeechParagraphLoop();
-  }
-}
-
-function updateReaderAudioSettings() {
-  if (currentProvider === 'webspeech') {
-    // El rate/pitch se lee en tiempo real en cada utterance — no hay que hacer nada
-    // La siguiente utterance ya usará el nuevo valor
-  } else {
-    const audio = audioElements['reader'];
-    if (audio) {
-      audio.playbackRate = parseFloat(document.getElementById('read-speed').value);
-    }
-  }
-}
-
-async function playWebSpeechParagraphLoop() {
-  currentReadSession++;
-  const session = currentReadSession;
-  isCurrentlyReading = true;
-
-  while (isCurrentlyReading && session === currentReadSession && currentParaIndex < currentTotalParas) {
-    highlightParagraph(currentParaIndex);
-    saveParaPosition();
-
-    const paraEl = document.querySelector(`.reader-para[data-index="${currentParaIndex}"]`);
-    if (!paraEl) {
-      currentParaIndex++;
-      currentCharOffset = 0;
-      continue;
-    }
-    const text = paraEl.textContent.trim();
-    if (!text) {
-      currentParaIndex++;
-      currentCharOffset = 0;
-      continue;
-    }
-
-    const savedCharOffsetKey = 'atk_charoff_' + currentEpubKey + '_' + currentChapter + '_' + currentParaIndex;
-    const savedCharOffset = parseInt(localStorage.getItem(savedCharOffsetKey) || '0');
-    const startOffset = (savedCharOffset > 0 && savedCharOffset < text.length) ? savedCharOffset : 0;
-
-    await speakParagraphWebSpeech(text, session, startOffset);
-
-    if (session !== currentReadSession || !isCurrentlyReading) {
-      break;
-    }
-    currentParaIndex++;
-    currentCharOffset = 0;
-  }
-
-  if (isCurrentlyReading && session === currentReadSession && currentParaIndex >= currentTotalParas) {
-    if (currentChapter < epubChapters.length - 1) {
-      currentParaIndex = 0;
-      saveParaPosition();
-      _showChapterSilent(currentChapter + 1);
-      const nch=epubChapters[currentChapter];
-      const mpChEl=document.getElementById('mp-chapter');
-      if(mpChEl) mpChEl.textContent=nch.title;
-      isCurrentlyReading = true; // asegurar que sigue true tras _showChapterSilent
-      playWebSpeechParagraphLoop();
-    } else {
-      stopReading();
-      const book = books.find(b => b.epubKey === currentEpubKey);
-      if (book) { book.status = 'read'; saveBooks(); renderBooks(); updateStats(); }
-    }
-  }
-}
-
-function speakParagraphWebSpeech(text, session, startOffset = 0) {
-  return new Promise((resolve) => {
-    if (!window.speechSynthesis) { resolve(); return; }
-    const synth = window.speechSynthesis;
-    synth.cancel();
-
-    currentCharOffset = startOffset;
-
-    const sentences = text.match(/[^.!?;:]+[.!?;:]+(?:\s|$)|[^.!?;:]+$/g) || [text];
-    const chunks = [];
-    let cur = '';
-    for (const s of sentences) {
-      if ((cur+s).length > 180 && cur) { chunks.push(cur.trim()); cur=s; }
-      else cur += s;
-    }
-    if (cur.trim()) chunks.push(cur.trim());
-
-    const fullText = text;
-    let chunkIdx = 0;
-    let chunkCharOffset = 0;
-
-    if (startOffset > 0) {
-      let acc = 0;
-      for (let i = 0; i < chunks.length; i++) {
-        const next = acc + chunks[i].length;
-        if (next > startOffset) {
-          chunks[i] = chunks[i].substring(startOffset - acc);
-          chunkIdx = i;
-          chunkCharOffset = startOffset;
-          break;
-        }
-        acc = next;
-      }
-    }
-
-    let resolved = false;
-    let watchdog = null;
-    let currentChunkStart = 0;
-
-    const paraEl = () => document.querySelector(`.reader-para[data-index="${currentParaIndex}"]`);
-
-    const finish = () => {
-      if (resolved) return;
-      resolved = true;
-      clearTimeout(watchdog);
-      activeUtterance = null;
-      currentCharOffset = 0;
-      const el = paraEl();
-      if (el) { el.classList.add('speaking'); el.innerHTML = escHtml(fullText); }
-      resolve();
-    };
-
-    const speakChunk = () => {
-      if (resolved) return;
-      if (chunkIdx >= chunks.length) { finish(); return; }
-      const chunk = chunks[chunkIdx];
-      currentChunkStart = chunkCharOffset;
-
-      const rate = parseFloat(document.getElementById('read-speed')?.value || '1');
-      const pitch = parseFloat(document.getElementById('read-pitch')?.value || '1');
-      const voiceId = document.getElementById('reader-voice').value;
-      const found = synth.getVoices().find(v => v.voiceURI === voiceId) || null;
-
-      const utt = new SpeechSynthesisUtterance(chunk);
-      activeUtterance = utt;
-      utt.rate = rate;
-      utt.pitch = pitch;
-      if (found) utt.voice = found;
-
-      utt.onboundary = (e) => {
-        if (e.name !== 'word' || resolved) return;
-        const el = paraEl();
-        if (!el) return;
-        const globalIdx = currentChunkStart + e.charIndex;
-        const wordLen = e.charLength || chunk.substr(e.charIndex).match(/^\S+/)?.[0].length || 1;
-        currentCharOffset = globalIdx + wordLen;
-        el.innerHTML =
-          escHtml(fullText.substring(0, globalIdx)) +
-          '<span class="speaking-word">' + escHtml(fullText.substr(globalIdx, wordLen)) + '</span>' +
-          escHtml(fullText.substring(globalIdx + wordLen));
-      };
-
-      utt.onend = () => {
-        if (session !== currentReadSession) { finish(); return; }
-        chunkCharOffset += chunk.length;
-        chunkIdx++;
-        clearTimeout(watchdog);
-        speakChunk();
-      };
-      utt.onerror = (e) => {
-        if (e.error === 'interrupted' || e.error === 'canceled') { finish(); return; }
-        chunkCharOffset += chunk.length;
-        chunkIdx++;
-        clearTimeout(watchdog);
-        speakChunk();
-      };
-
-      clearTimeout(watchdog);
-      watchdog = setTimeout(() => {
-        if (!resolved) { synth.cancel(); chunkCharOffset += chunk.length; chunkIdx++; speakChunk(); }
-      }, Math.max(8000, chunk.length * 80));
-
-      synth.speak(utt);
-    };
-
-    setTimeout(speakChunk, 50);
-  });
-}
-
 async function readCurrentChapter(){
   const isWebSpeech=currentProvider==='webspeech';
   if(!isWebSpeech&&!apiKeys[currentProvider]){openApiModal();return;}
@@ -2479,87 +1000,74 @@ async function readCurrentChapter(){
   const voiceId=document.getElementById('reader-voice').value;
   if(!voiceId&&currentProvider!=='webspeech'){toast('⚠️ Selecciona una voz');return;}
   const ch=epubChapters[currentChapter];
-
-  const parasInDom = document.querySelectorAll('.reader-para');
-  if(parasInDom.length > 0) currentTotalParas = parasInDom.length;
-
-  saveParaPosition();
-  const audio=audioElements['reader'];
-  if(audio) { saveParaPosition(); audio.pause(); }
-  if(window.speechSynthesis) window.speechSynthesis.cancel();
-
+  const cleanText=ch.content.replace(/\s+/g,' ').trim().substring(0,5000);
+  stopReading();
   const btn=document.getElementById('read-btn');
   btn.disabled=true;btn.innerHTML='⏳ Generando…';
   document.getElementById('stop-btn').style.display='flex';
-
   try{
     const model=PROVIDERS[currentProvider]?.models?.[0]?.id||'';
-    startBackgroundKeepalive();
-
-    if (isWebSpeech) {
-      btn.disabled=false;btn.innerHTML='▶ Leer';
-      const savedPara = localStorage.getItem('atk_para_' + currentEpubKey + '_' + currentChapter);
-      currentParaIndex = savedPara !== null ? parseInt(savedPara) : 0;
-      currentCharOffset = 0;
-
-      showMiniPlayerWS(ch.title);
-      startWSWidgetSync();
-      playWebSpeechParagraphLoop();
+    startBackgroundKeepalive(); // start keepalive before TTS so audio focus is held
+    const blob=await ttsRequest(cleanText,voiceId,model);
+    if(blob!==null){
+      // API-based TTS — use real <audio> element
+      const url=URL.createObjectURL(blob);
+      setupPlayer('reader',url,blob,ch.title);
+      document.getElementById('reader-player-wrap').style.display='block';
+      const audio=audioElements['reader'];
+      audio.playbackRate=parseFloat(document.getElementById('read-speed').value);
+      audio.play();
+      document.getElementById('reader-play').textContent='⏸';
+      // Show mini player + MediaSession
+      showMiniPlayer(audio,ch.title);
+      audio.onended=()=>{
+        document.getElementById('reader-play').textContent='▶';
+        document.getElementById('stop-btn').style.display='none';
+        if(currentChapter<epubChapters.length-1){
+          setTimeout(()=>{showChapter(currentChapter+1);readCurrentChapter();},800);
+        } else {
+          stopBackgroundKeepalive();
+          hideMiniPlayer();
+          const book=books.find(b=>b.epubKey===currentEpubKey);
+          if(book){book.status='read';saveBooks();renderBooks();updateStats();}
+        }
+      };
     } else {
-      const cleanText=ch.content.replace(/\s+/g,' ').trim().substring(0,5000);
-      const blob=await ttsRequest(cleanText,voiceId,model);
-      if(blob!==null){
-        const url=URL.createObjectURL(blob);
-        setupPlayer('reader',url,blob,ch.title);
-        document.getElementById('reader-player-wrap').style.display='block';
-        const audio=audioElements['reader'];
-        audio.playbackRate=parseFloat(document.getElementById('read-speed').value);
-        audio.play();
-        document.getElementById('reader-play').textContent='⏸';
-        showMiniPlayer(audio,ch.title);
-        audio.onended=()=>{
-          document.getElementById('reader-play').textContent='▶';
-          document.getElementById('stop-btn').style.display='none';
-          if(currentChapter<epubChapters.length-1){
-            currentParaIndex = 0;
-            saveParaPosition();
-            setTimeout(()=>{showChapter(currentChapter+1);readCurrentChapter();},800);
-          } else {
-            stopBackgroundKeepalive();
-            hideMiniPlayer();
-            const book=books.find(b=>b.epubKey===currentEpubKey);
-            if(book){book.status='read';saveBooks();renderBooks();updateStats();}
-          }
-        };
+      // WebSpeech — speaks directly, no blob
+      // Update MediaSession with fake audio element trick for lock screen widget
+      document.getElementById('stop-btn').style.display='flex';
+      btn.disabled=false;btn.innerHTML='▶ Leer';
+      // Show mini player using silent audio for lock screen controls
+      if(_silentAudio){
+        showMiniPlayer(_silentAudio, ch.title);
       }
+      // When WebSpeech finishes, auto-advance
+      // ttsRequest already resolved — advance chapter now
+      if(currentChapter<epubChapters.length-1){
+        setTimeout(()=>{showChapter(currentChapter+1);readCurrentChapter();},800);
+      } else {
+        stopBackgroundKeepalive();
+        hideMiniPlayer();
+        const book=books.find(b=>b.epubKey===currentEpubKey);
+        if(book){book.status='read';saveBooks();renderBooks();updateStats();}
+      }
+      return; // skip the btn reset below
     }
   }catch(e){
     stopBackgroundKeepalive();
     toast('❌ '+e.message);
   }
   btn.disabled=false;btn.innerHTML='▶ Leer';
+  document.getElementById('stop-btn').style.display='none';
 }
 
 function stopReading(){
-  saveParaPosition();
-  isCurrentlyReading = false;
-  currentReadSession++;
-  currentCharOffset = 0;
-  activeUtterance = null;
   const audio=audioElements['reader'];
   if(audio) audio.pause();
   if(window.speechSynthesis) window.speechSynthesis.cancel();
   stopBackgroundKeepalive();
-
-  document.querySelectorAll('.reader-para').forEach(el => {
-    el.classList.remove('speaking');
-    if(el.querySelector('.speaking-word')) el.textContent = el.textContent;
-  });
-
   const pb=document.getElementById('reader-play');
   if(pb) pb.textContent='▶';
-  const mpbtn=document.getElementById('mp-play-btn');
-  if(mpbtn) mpbtn.textContent='▶';
   const sb=document.getElementById('stop-btn');
   if(sb) sb.style.display='none';
   const rb=document.getElementById('read-btn');
@@ -2569,74 +1077,6 @@ function stopReading(){
 // ═══════════════════════════════════════════
 //  MINI PLAYER
 // ═══════════════════════════════════════════
-// Sincronizar widget con estado real de WebSpeech
-let _wsWidgetSync = null;
-function startWSWidgetSync(){
-  clearInterval(_wsWidgetSync);
-  _wsWidgetSync = setInterval(()=>{
-    if(currentProvider!=='webspeech') return;
-    const btn = document.getElementById('mp-play-btn');
-    if(!btn) return;
-    const mp = document.getElementById('mini-player');
-    if(!mp||!mp.classList.contains('visible')) return;
-    btn.textContent = isCurrentlyReading ? '⏸' : '▶';
-  }, 500);
-}
-
-function showMiniPlayerWS(chapterTitle){
-  // Widget para WebSpeech: sin audio real, controla speechSynthesis directamente
-  miniPlayerAudio = null; // no hay audio real
-  const mp = document.getElementById('mini-player');
-  mp.classList.add('visible');
-  document.getElementById('mp-chapter').textContent = chapterTitle||'—';
-  document.getElementById('mp-play-btn').textContent = '⏸';
-  document.getElementById('mp-cur').textContent = '0:00';
-  document.getElementById('mp-dur').textContent = '—';
-  document.getElementById('mp-prog-fill').style.width = '0%';
-  const book = books.find(b=>b.epubKey===currentEpubKey);
-  if(book){
-    currentEpubBookId = book.id;
-    document.getElementById('mp-book-title').textContent = book.title||book.filename||'—';
-    if(book.coverData){
-      document.getElementById('mp-cover').src = book.coverData;
-      document.getElementById('mp-cover').style.display = 'block';
-      document.getElementById('mp-cover-ph').style.display = 'none';
-    } else {
-      document.getElementById('mp-cover').style.display = 'none';
-      document.getElementById('mp-cover-ph').style.display = 'flex';
-    }
-  } else {
-    document.getElementById('mp-book-title').textContent = document.getElementById('reader-book-name').textContent||'—';
-  }
-  updateMediaSession();
-  renderBooks();
-}
-
-function toggleMiniPlay(){
-  if(currentProvider==='webspeech'){
-    if(isCurrentlyReading){
-      // Parar: guardar posición y cancelar síntesis
-      saveParaPosition();
-      isCurrentlyReading = false;
-      currentReadSession++; // invalida el loop actual
-      if(window.speechSynthesis) window.speechSynthesis.cancel();
-      document.getElementById('mp-play-btn').textContent='▶';
-      const rb=document.getElementById('read-btn');
-      if(rb) rb.textContent='▶ Leer';
-    } else {
-      // Reanudar: relanzar el loop desde la posición guardada sin reiniciar todo
-      if(!epubChapters.length) return;
-      isCurrentlyReading = true;
-      document.getElementById('mp-play-btn').textContent='⏸';
-      playWebSpeechParagraphLoop();
-    }
-    return;
-  }
-  if(!miniPlayerAudio) return;
-  if(miniPlayerAudio.paused) miniPlayerAudio.play();
-  else miniPlayerAudio.pause();
-}
-
 function showMiniPlayer(audio, chapterTitle){
   miniPlayerAudio=audio;
   const mp=document.getElementById('mini-player');
@@ -2675,11 +1115,7 @@ function hideMiniPlayer(){
 }
 
 function closeMiniPlayer(){
-  if(currentProvider==='webspeech'){
-    if(isCurrentlyReading) stopReading();
-  } else {
-    if(miniPlayerAudio) miniPlayerAudio.pause();
-  }
+  if(miniPlayerAudio) miniPlayerAudio.pause();
   hideMiniPlayer();
 }
 
@@ -2698,20 +1134,17 @@ function seekMiniPlayer(e){
   miniPlayerAudio.currentTime=((e.clientX-rect.left)/rect.width)*miniPlayerAudio.duration;
 }
 
+function toggleMiniPlay(){
+  if(!miniPlayerAudio) return;
+  if(miniPlayerAudio.paused) miniPlayerAudio.play();
+  else miniPlayerAudio.pause();
+}
+
 function setMiniVolume(v){
   if(miniPlayerAudio) miniPlayerAudio.volume=parseFloat(v);
 }
 
 function skip(secs){
-  if(currentProvider==='webspeech'){
-    currentParaIndex += (secs > 0 ? 1 : -1);
-    if(currentParaIndex<0) currentParaIndex=0;
-    currentCharOffset=0;
-    saveParaPosition();
-    if(window.speechSynthesis) window.speechSynthesis.cancel();
-    if(!isCurrentlyReading) readCurrentChapter();
-    return;
-  }
   if(!miniPlayerAudio) return;
   miniPlayerAudio.currentTime=Math.max(0,Math.min(miniPlayerAudio.duration||0,miniPlayerAudio.currentTime+secs));
 }
@@ -2766,11 +1199,11 @@ function updateMediaSession(){
 
   // Action handlers
   navigator.mediaSession.setActionHandler('play', ()=>{
-    toggleMiniPlay();
+    miniPlayerAudio?.play();
     navigator.mediaSession.playbackState='playing';
   });
   navigator.mediaSession.setActionHandler('pause', ()=>{
-    toggleMiniPlay();
+    miniPlayerAudio?.pause();
     navigator.mediaSession.playbackState='paused';
   });
   navigator.mediaSession.setActionHandler('stop', ()=>{
@@ -2826,36 +1259,18 @@ function updateMediaSession(){
 let _silentAudio=null;
 let _bgKeepaliveTimer=null;
 
-// ── WAKE LOCK — mantiene la pantalla activa mientras lee ──
-let _wakeLock=null;
-async function requestWakeLock(){
-  if('wakeLock' in navigator){
-    try{
-      _wakeLock=await navigator.wakeLock.request('screen');
-      _wakeLock.addEventListener('release',()=>{_wakeLock=null;});
-    }catch(e){/* navegador no lo permite, sin problema */}
-  }
-}
-async function releaseWakeLock(){
-  if(_wakeLock){try{await _wakeLock.release();}catch(e){}  _wakeLock=null;}
-}
-// Re-adquirir WakeLock si la página vuelve a ser visible
-document.addEventListener('visibilitychange',()=>{
-  if(!document.hidden&&_wakeLock===null&&window._wlRequested) requestWakeLock();
-});
-
 function startBackgroundKeepalive(){
-  window._wlRequested=true;
-  requestWakeLock();
   // 1. Play a silent looping audio to hold AudioFocus
   if(!_silentAudio){
+    // 1-second silent MP3 as base64
     const silentMp3='data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAABAAADQgD///////////////////////////////////////////////////////////////////////////////////////////////////////////8AAAA5TGFNRQ==';
     _silentAudio=new Audio(silentMp3);
     _silentAudio.loop=true;
-    _silentAudio.volume=0.001;
+    _silentAudio.volume=0.001; // near-silent but non-zero
   }
   _silentAudio.play().catch(()=>{});
-  // 2. Watchdog: si WebSpeech se pausa, reanudar
+
+  // 2. Watchdog: if WebSpeech pauses unexpectedly, resume it
   if(_bgKeepaliveTimer) clearInterval(_bgKeepaliveTimer);
   _bgKeepaliveTimer=setInterval(()=>{
     if(!window.speechSynthesis) return;
@@ -2864,68 +1279,15 @@ function startBackgroundKeepalive(){
 }
 
 function stopBackgroundKeepalive(){
-  window._wlRequested=false;
-  releaseWakeLock();
   if(_silentAudio){_silentAudio.pause();_silentAudio.currentTime=0;}
   if(_bgKeepaliveTimer){clearInterval(_bgKeepaliveTimer);_bgKeepaliveTimer=null;}
 }
 
-// Resume WebSpeech al volver a primer plano
+// Handle visibility change — resume speech if page comes back from background
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden) return;
+  // Page became visible — resume if speech was active
   if(window.speechSynthesis?.paused) window.speechSynthesis.resume();
-});
-
-// ── PERSISTENCIA DE POSICIÓN DE SCROLL POR CAPÍTULO ──
-function saveScrollPosition(){
-  if(!currentEpubKey) return;
-  const area=document.getElementById('reader-text');
-  if(!area) return;
-  const key='atk_scroll_'+currentEpubKey+'_'+currentChapter;
-  try{localStorage.setItem(key,area.scrollTop);}catch(e){}
-}
-function restoreScrollPosition(){
-  if(!currentEpubKey) return;
-  const area=document.getElementById('reader-text');
-  if(!area) return;
-  const key='atk_scroll_'+currentEpubKey+'_'+currentChapter;
-  const saved=localStorage.getItem(key);
-  if(saved!==null) requestAnimationFrame(()=>{area.scrollTop=parseInt(saved)||0;});
-}
-// Guardar scroll periódicamente mientras se lee
-let _scrollSaveTimer=null;
-document.addEventListener('DOMContentLoaded',()=>{
-  const area=document.getElementById('reader-text');
-  if(area){
-    area.addEventListener('scroll',()=>{
-      clearTimeout(_scrollSaveTimer);
-      _scrollSaveTimer=setTimeout(saveScrollPosition,500);
-    });
-
-    // Teclado: flechas izq/der para navegar capítulos
-    document.addEventListener('keydown', e=>{
-      if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.isContentEditable) return;
-      if(!epubChapters.length) return;
-      if(e.key==='ArrowRight'||e.key==='PageDown') nextChapter();
-      if(e.key==='ArrowLeft'||e.key==='PageUp') prevChapter();
-    });
-
-    // Swipe: escuchar en el panel completo para no interferir con scroll vertical
-    const readerPanel = document.getElementById('panel-reader');
-    if(readerPanel){
-      let tx=0, ty=0;
-      readerPanel.addEventListener('touchstart', e=>{
-        tx=e.touches[0].clientX; ty=e.touches[0].clientY;
-      },{passive:true});
-      readerPanel.addEventListener('touchend', e=>{
-        const dx=e.changedTouches[0].clientX-tx;
-        const dy=e.changedTouches[0].clientY-ty;
-        if(Math.abs(dx)>70 && Math.abs(dx)>Math.abs(dy)*2){
-          if(dx<0) nextChapter(); else prevChapter();
-        }
-      },{passive:true});
-    }
-  }
 });
 
 
@@ -3171,49 +1533,34 @@ function updatePitchLabel(sliderId,labelId){
 function loadWebSpeechVoices(){
   if(!window.speechSynthesis) return[];
   const raw=window.speechSynthesis.getVoices();
-  // Capturar todas las variantes de español (es-, es_, ES)
-  const esVoices=raw.filter(v=>{
-    const l=(v.lang||'').toLowerCase().replace('_','-');
-    return l.startsWith('es');
-  });
-  // Si no hay voces en español, mostrar TODAS las disponibles como fallback
-  const pool = esVoices.length ? esVoices : raw;
-  if(!pool.length){
-    return[{voice_id:'__fallback__',name:'⚠️ Sin voces instaladas — activa voces en Ajustes',labels:{lang:'es',accent:''}}];
+  // All Spanish voices
+  const esVoices=raw.filter(v=>v.lang.toLowerCase().startsWith('es'));
+  if(!esVoices.length){
+    return[{voice_id:'__fallback__',name:'⚠️ Sin voces en español instaladas',labels:{lang:'es',accent:''}}];
   }
   const ACCENT_LABELS={
     'es-es':'🇪🇸 España','es-mx':'🇲🇽 México','es-us':'🇺🇸 EEUU',
     'es-ar':'🇦🇷 Argentina','es-co':'🇨🇴 Colombia','es-419':'🌎 Latam','es-xl':'🌎 Latam'
   };
-  // Score: Google/Microsoft/Apple first, then any. Don't filter out valid Android voices.
+  // Score: Google/Microsoft/Apple first, then any, skip pure TTS junk
+  const junk=['espeak','mbrola','festival','pico','eloquence'];
   const quality=['google','microsoft','apple','samsung'];
   const score=v=>{
     const n=v.name.toLowerCase();
+    if(junk.some(w=>n.includes(w))) return -1;
     if(quality.some(w=>n.includes(w))) return 10;
-    if(!v.localService) return 5; // network voices tend to be better
+    if(!v.localService) return 5; // cloud/network voices tend to be better
     return 1;
   };
   const seen=new Set();
-  return pool
-    .filter(v=>{ const k=v.voiceURI; if(seen.has(k)) return false; seen.add(k); return true; })
+  return esVoices
+    .filter(v=>{ const k=v.name+v.lang; if(seen.has(k)) return false; seen.add(k); return score(v)>=0; })
     .sort((a,b)=>score(b)-score(a))
     .map(v=>{
-      const langKey=(v.lang||'').toLowerCase().replace('_','-').slice(0,5);
+      const langKey=v.lang.toLowerCase().slice(0,5);
       const accent=ACCENT_LABELS[langKey]||('🌍 '+v.lang);
-      let cleanName=v.name.replace(/\s*\([a-z]{2}[-_][A-Z]{2,3}\)\s*$/,'').trim();
-
-      // Extract voice code variant from voiceURI if name is generic (like Google voices)
-      const match=v.voiceURI.match(/-x-([a-z0-9]+)/i);
-      const variant=match?match[1]:'';
-      if(variant&&!cleanName.toLowerCase().includes(variant)){
-        cleanName+=` (${variant})`;
-      }
-
-      // Determine gender
-      const lowerName=(v.name+' '+v.voiceURI).toLowerCase();
-      const isFemale=lowerName.includes('female')||['helena','monica','lucia','sofia','maria','paloma','paulina','elena','sabina'].some(n=>lowerName.includes(n));
-      const genderHint=isFemale?'♀':'♂';
-
+      const cleanName=v.name.replace(/\s*\([a-z]{2}[-_][A-Z]{2,3}\)\s*$/,'').trim();
+      const genderHint=v.name.toLowerCase().includes('female')||['helena','monica','lucia','sofia','maria','paloma'].some(n=>v.name.toLowerCase().includes(n))?'♀':'♂';
       return{voice_id:v.voiceURI,name:cleanName+' '+genderHint+' '+accent,labels:{lang:'es',accent:v.lang},_wsVoice:v};
     });
 }
@@ -3224,33 +1571,14 @@ function loadVoicesForProvider(){
   if(p.voicesSource==='webspeech'){
     const apply=()=>{voices=loadWebSpeechVoices();populateVoiceSelects();renderVoiceGrid();};
     let attempts=0;
-    let lastCount=-1;
     const tryLoad=()=>{
       const raw=window.speechSynthesis?.getVoices()||[];
-      const esCount=raw.filter(v=>v.lang.toLowerCase().startsWith('es')).length;
-      attempts++;
-      // Aplicar siempre que haya cambio o primeras veces
-      if(raw.length!==lastCount){lastCount=raw.length;apply();}
-      // Forzar init del motor TTS en móvil con dummy real
-      if(attempts===1 && raw.length<=3) {
-        try{
-          let dummy = new SpeechSynthesisUtterance(' ');
-          dummy.volume = 0;dummy.rate=10;
-          window.speechSynthesis.speak(dummy);
-          setTimeout(()=>{window.speechSynthesis.cancel();},200);
-        }catch(e){}
-      }
-      // Seguir intentando si pocas voces y no demasiados intentos
-      if(esCount<=2&&attempts<25) setTimeout(tryLoad,600);
-      else if(attempts<5) setTimeout(tryLoad,800);
+      const hasGoogle=raw.some(v=>v.name.toLowerCase().includes('google'));
+      attempts++;apply();
+      if(!hasGoogle&&attempts<8) setTimeout(tryLoad,500);
     };
-    if(window.speechSynthesis){
-      window.speechSynthesis.onvoiceschanged=()=>{apply();};
-    }
+    if(window.speechSynthesis) window.speechSynthesis.onvoiceschanged=apply;
     tryLoad();
-    // Segundo intento tras 2s para capturar voces que cargan tarde (iOS Safari)
-    setTimeout(apply, 2000);
-    setTimeout(apply, 4000);
   } else if(p.voicesSource==='api'){
     if(apiKeys[currentProvider]) loadVoices();
     else{voices=JSON.parse(localStorage.getItem('voz_voices_'+currentProvider)||'[]');populateVoiceSelects();}
@@ -3584,7 +1912,7 @@ function exportLibraryPage(){
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Mi Biblioteca — \${books.length} libros</title>
+<title>Mi Biblioteca — ${books.length} libros</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -3921,20 +2249,7 @@ footer span{color:var(--gold)}
   aside{
     width:100%;min-width:100%;height:auto;
     position:relative;border-right:none;border-bottom:1px solid var(--b1);
-    padding:20px;gap:16px;
-  }
-  .filter-menu{
-    flex-direction:row;
-    overflow-x:auto;
-    padding-bottom:4px;
-    -ms-overflow-style:none;
-    scrollbar-width:none;
-  }
-  .filter-menu::-webkit-scrollbar{display:none;}
-  .flt-btn{
-    white-space:nowrap;
-    flex-shrink:0;
-    gap:8px;
+    padding:30px 20px 20px;gap:20px;
   }
   main{padding:24px 20px}
   .hero-banner{padding:24px}
@@ -4080,10 +2395,10 @@ function renderCategories(){
   const menu = document.getElementById('categories-menu');
   menu.innerHTML = categories.map(cat => {
     const count = books.filter(b => b.catId === cat.id).length;
-    return \`<button class="flt-btn" id="flt-cat-\${cat.id}" onclick="setCategoryFilter('\${cat.id}')">
-      <span><span style="color:\${cat.color}; margin-right: 6px;">●</span>\${cat.name}</span>
-      <span class="flt-badge">\${count}</span>
-    </button>\`;
+    return `<button class="flt-btn" id="flt-cat-${cat.id}" onclick="setCategoryFilter('${cat.id}')">
+      <span><span style="color:${cat.color}; margin-right: 6px;">●</span>${cat.name}</span>
+      <span class="flt-badge">${count}</span>
+    </button>`;
   }).join('');
 }
 
@@ -4154,11 +2469,11 @@ function renderGrid(){
   }
 
   if(!filtered.length){
-    grid.innerHTML = \`<div class="empty-state" style="grid-column: 1/-1; text-align:center; padding: 60px 20px; color: var(--t3);">
+    grid.innerHTML = `<div class="empty-state" style="grid-column: 1/-1; text-align:center; padding: 60px 20px; color: var(--t3);">
       <div style="font-size:48px; margin-bottom: 12px;">📚</div>
       <h3>No se encontraron libros</h3>
       <p style="font-size:12px; margin-top:4px;">Prueba cambiando tus términos de búsqueda o filtros.</p>
-    </div>\`;
+    </div>`;
     return;
   }
 
@@ -4170,31 +2485,31 @@ function renderGrid(){
     
     let coverHtml;
     if(b.coverData){
-      coverHtml = \`<img src="\${b.coverData}" alt="" loading="lazy">\`;
+      coverHtml = `<img src="${b.coverData}" alt="" loading="lazy">`;
     } else {
       const initial = (b.title||'?')[0].toUpperCase();
-      coverHtml = \`<div class="card-ph" style="background:\${catColor}22; color:\${catColor}"><span>\${initial}</span></div>\`;
+      coverHtml = `<div class="card-ph" style="background:${catColor}22; color:${catColor}"><span>${initial}</span></div>`;
     }
 
     const statusEmoji = {unread:'📋',reading:'📖',read:'✅'}[b.status]||'📋';
 
-    return \`<div class="card" onclick="openDetails('\${b.id}')">
+    return `<div class="card" onclick="openDetails('${b.id}')">
       <div class="card-cover-wrap">
-        \${coverHtml}
-        <div class="card-status-badge">\${statusEmoji}</div>
-        \${b.favorite ? '<div class="card-fav-badge">❤️</div>' : ''}
+        ${coverHtml}
+        <div class="card-status-badge">${statusEmoji}</div>
+        ${b.favorite ? '<div class="card-fav-badge">❤️</div>' : ''}
       </div>
       <div class="card-info">
         <div>
-          <div class="card-title">\${escapeHtml(b.title||'Sin título')}</div>
-          <div class="card-author">\${escapeHtml(b.author||'Autor desconocido')}</div>
+          <div class="card-title">${escapeHtml(b.title||'Sin título')}</div>
+          <div class="card-author">${escapeHtml(b.author||'Autor desconocido')}</div>
         </div>
         <div class="card-meta">
-          <span class="card-cat-badge" style="background:\${catColor}15; color:\${catColor}; border-color:\${catColor}33">\${catName}</span>
-          <span class="card-stars">\${stars}</span>
+          <span class="card-cat-badge" style="background:${catColor}15; color:${catColor}; border-color:${catColor}33">${catName}</span>
+          <span class="card-stars">${stars}</span>
         </div>
       </div>
-    </div>\`;
+    </div>`;
   }).join('');
 }
 
@@ -4219,9 +2534,9 @@ function openDetails(bookId){
 
   const img = document.getElementById('modal-cover');
   if(book.coverData){
-    img.innerHTML = \`<img src="\${book.coverData}" alt="">\`;
+    img.innerHTML = `<img src="${book.coverData}" alt="">`;
   } else {
-    img.innerHTML = \`<div class="modal-ph" style="background:\${catColor}22; color:\${catColor}">\${(book.title||'?')[0].toUpperCase()}</div>\`;
+    img.innerHTML = `<div class="modal-ph" style="background:${catColor}22; color:${catColor}">${(book.title||'?')[0].toUpperCase()}</div>`;
   }
 
   document.getElementById('modal-title').textContent = book.title || 'Sin título';
@@ -4279,34 +2594,4 @@ function switchTab(tab){
 }
 
 document.addEventListener('DOMContentLoaded', init);
-<\/script>
-</body>
-</html>`;
-
-  const blob = new Blob([html], {type:'text/html;charset=utf-8'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'mi-biblioteca.html';
-  a.click();
-  URL.revokeObjectURL(url);
-  toast('📄 Biblioteca exportada como página web');
-}
-
-// ═══════════════════════════════════════════
-//  BOOT
-// ═══════════════════════════════════════════
-registerSW();
-document.addEventListener('DOMContentLoaded',init);
-
-
-// ═══════════════════════════════════════════
-//  BIBLIOTECA PRECARGADA (87 libros)
-// ═══════════════════════════════════════════
-async function injectPreloadedLibrary(){
-  console.log('Precarga EPUB desactivada');
-  return;
-}
 </script>
-</body>
-</html>
