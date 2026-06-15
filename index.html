@@ -339,6 +339,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 .reader-para:hover{background:rgba(255,255,255,0.04)}
 .reader-text .speaking{background:rgba(212,168,67,0.2) !important;color:var(--t1) !important}
 .reader-text .speaking-word{background:rgba(212,168,67,0.6);border-radius:3px;padding:0 2px}
+.reader-text mark.speaking-word{background:rgba(212,168,67,0.6);border-radius:3px;padding:0 2px;color:inherit;}
 /* ── READER CONTROLS ── */
 .reader-controls{padding:14px 20px;border-top:1px solid var(--b1);background:var(--s1);display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0;padding-bottom:calc(14px + var(--sab))}
 .rc-group{display:flex;align-items:center;gap:6px}
@@ -2293,8 +2294,12 @@ function jumpToParagraph(idx) {
   currentCharOffset = 0;
   highlightParagraph(idx);
   saveParaPosition();
-  if (isCurrentlyReading && currentProvider === 'webspeech') {
-    playWebSpeechParagraphLoop();
+  if (isCurrentlyReading) {
+    currentReadSession++;
+    isCurrentlyReading = false;
+    if(window.speechSynthesis) window.speechSynthesis.cancel();
+    // Pequeño delay para que cancel() se propague antes de reiniciar
+    setTimeout(()=>readCurrentChapter(), 50);
   }
 }
 
@@ -2310,205 +2315,69 @@ function updateReaderAudioSettings() {
   }
 }
 
-async function playWebSpeechParagraphLoop() {
-  currentReadSession++;
-  const session = currentReadSession;
-  isCurrentlyReading = true;
-
-  while (isCurrentlyReading && session === currentReadSession && currentParaIndex < currentTotalParas) {
-    highlightParagraph(currentParaIndex);
-    saveParaPosition();
-
-    const paraEl = document.querySelector(`.reader-para[data-index="${currentParaIndex}"]`);
-    if (!paraEl) {
-      currentParaIndex++;
-      currentCharOffset = 0;
-      continue;
-    }
-    const text = paraEl.textContent.trim();
-    if (!text) {
-      currentParaIndex++;
-      currentCharOffset = 0;
-      continue;
-    }
-
-    const savedCharOffsetKey = 'atk_charoff_' + currentEpubKey + '_' + currentChapter + '_' + currentParaIndex;
-    const savedCharOffset = parseInt(localStorage.getItem(savedCharOffsetKey) || '0');
-    const startOffset = (savedCharOffset > 0 && savedCharOffset < text.length) ? savedCharOffset : 0;
-
-    await speakParagraphWebSpeech(text, session, startOffset);
-
-    if (session !== currentReadSession || !isCurrentlyReading) {
-      break;
-    }
-    currentParaIndex++;
-    currentCharOffset = 0;
-  }
-
-  if (isCurrentlyReading && session === currentReadSession && currentParaIndex >= currentTotalParas) {
-    if (currentChapter < epubChapters.length - 1) {
-      currentParaIndex = 0;
-      saveParaPosition();
-      _showChapterSilent(currentChapter + 1);
-      const nch=epubChapters[currentChapter];
-      const mpChEl=document.getElementById('mp-chapter');
-      if(mpChEl) mpChEl.textContent=nch.title;
-      isCurrentlyReading = true; // asegurar que sigue true tras _showChapterSilent
-      playWebSpeechParagraphLoop();
-    } else {
-      stopReading();
-      const book = books.find(b => b.epubKey === currentEpubKey);
-      if (book) { book.status = 'read'; saveBooks(); renderBooks(); updateStats(); }
-    }
-  }
-}
-
-function speakParagraphWebSpeech(text, session, startOffset = 0) {
-  return new Promise((resolve) => {
-    if (!window.speechSynthesis) { resolve(); return; }
-    const synth = window.speechSynthesis;
-    synth.cancel();
-
-    currentCharOffset = startOffset;
-
-    const sentences = text.match(/[^.!?;:]+[.!?;:]+(?:\s|$)|[^.!?;:]+$/g) || [text];
-    const chunks = [];
-    let cur = '';
-    for (const s of sentences) {
-      if ((cur+s).length > 180 && cur) { chunks.push(cur.trim()); cur=s; }
-      else cur += s;
-    }
-    if (cur.trim()) chunks.push(cur.trim());
-
-    const fullText = text;
-    let chunkIdx = 0;
-    let chunkCharOffset = 0;
-
-    if (startOffset > 0) {
-      let acc = 0;
-      for (let i = 0; i < chunks.length; i++) {
-        const next = acc + chunks[i].length;
-        if (next > startOffset) {
-          chunks[i] = chunks[i].substring(startOffset - acc);
-          chunkIdx = i;
-          chunkCharOffset = startOffset;
-          break;
-        }
-        acc = next;
-      }
-    }
-
-    let resolved = false;
-    let watchdog = null;
-    let currentChunkStart = 0;
-
-    const paraEl = () => document.querySelector(`.reader-para[data-index="${currentParaIndex}"]`);
-
-    const finish = () => {
-      if (resolved) return;
-      resolved = true;
-      clearTimeout(watchdog);
-      activeUtterance = null;
-      currentCharOffset = 0;
-      const el = paraEl();
-      if (el) { el.classList.add('speaking'); el.innerHTML = escHtml(fullText); }
-      resolve();
-    };
-
-    const speakChunk = () => {
-      if (resolved) return;
-      if (chunkIdx >= chunks.length) { finish(); return; }
-      const chunk = chunks[chunkIdx];
-      currentChunkStart = chunkCharOffset;
-
-      const rate = parseFloat(document.getElementById('read-speed')?.value || '1');
-      const pitch = parseFloat(document.getElementById('read-pitch')?.value || '1');
-      const voiceId = document.getElementById('reader-voice').value;
-      const found = synth.getVoices().find(v => v.voiceURI === voiceId) || null;
-
-      const utt = new SpeechSynthesisUtterance(chunk);
-      activeUtterance = utt;
-      utt.rate = rate;
-      utt.pitch = pitch;
-      if (found) utt.voice = found;
-
-      utt.onboundary = (e) => {
-        if (e.name !== 'word' || resolved) return;
-        const el = paraEl();
-        if (!el) return;
-        const globalIdx = currentChunkStart + e.charIndex;
-        const wordLen = e.charLength || chunk.substr(e.charIndex).match(/^\S+/)?.[0].length || 1;
-        currentCharOffset = globalIdx + wordLen;
-        el.innerHTML =
-          escHtml(fullText.substring(0, globalIdx)) +
-          '<span class="speaking-word">' + escHtml(fullText.substr(globalIdx, wordLen)) + '</span>' +
-          escHtml(fullText.substring(globalIdx + wordLen));
-      };
-
-      utt.onend = () => {
-        if (session !== currentReadSession) { finish(); return; }
-        chunkCharOffset += chunk.length;
-        chunkIdx++;
-        clearTimeout(watchdog);
-        speakChunk();
-      };
-      utt.onerror = (e) => {
-        if (e.error === 'interrupted' || e.error === 'canceled') { finish(); return; }
-        chunkCharOffset += chunk.length;
-        chunkIdx++;
-        clearTimeout(watchdog);
-        speakChunk();
-      };
-
-      clearTimeout(watchdog);
-      watchdog = setTimeout(() => {
-        if (!resolved) { synth.cancel(); chunkCharOffset += chunk.length; chunkIdx++; speakChunk(); }
-      }, Math.max(8000, chunk.length * 80));
-
-      synth.speak(utt);
-    };
-
-    setTimeout(speakChunk, 50);
-  });
-}
-
 async function readCurrentChapter(){
   const isWebSpeech=currentProvider==='webspeech';
   if(!isWebSpeech&&!apiKeys[currentProvider]){openApiModal();return;}
   if(!epubChapters.length){toast('⚠️ Abre un libro primero');return;}
   const voiceId=document.getElementById('reader-voice').value;
   if(!voiceId&&currentProvider!=='webspeech'){toast('⚠️ Selecciona una voz');return;}
-  const ch=epubChapters[currentChapter];
-
-  const parasInDom = document.querySelectorAll('.reader-para');
-  if(parasInDom.length > 0) currentTotalParas = parasInDom.length;
-
-  saveParaPosition();
-  const audio=audioElements['reader'];
-  if(audio) { saveParaPosition(); audio.pause(); }
-  if(window.speechSynthesis) window.speechSynthesis.cancel();
 
   const btn=document.getElementById('read-btn');
-  btn.disabled=true;btn.innerHTML='⏳ Generando…';
-  document.getElementById('stop-btn').style.display='flex';
+  const stopBtn=document.getElementById('stop-btn');
+  btn.disabled=true;btn.innerHTML='⏳ Leyendo…';
+  stopBtn.style.display='flex';
+  isCurrentlyReading=true;
 
   try{
-    const model=PROVIDERS[currentProvider]?.models?.[0]?.id||'';
     startBackgroundKeepalive();
 
-    if (isWebSpeech) {
-      btn.disabled=false;btn.innerHTML='▶ Leer';
-      const savedPara = localStorage.getItem('atk_para_' + currentEpubKey + '_' + currentChapter);
-      currentParaIndex = savedPara !== null ? parseInt(savedPara) : 0;
-      currentCharOffset = 0;
+    if(isWebSpeech){
+      // Asegurar voces cargadas antes de empezar
+      if(window.speechSynthesis.getVoices().length===0){
+        await new Promise(res=>{window.speechSynthesis.onvoiceschanged=res;setTimeout(res,1000);});
+      }
 
-      showMiniPlayerWS(ch.title);
-      startWSWidgetSync();
-      playWebSpeechParagraphLoop();
+      // Leer capítulos en bucle, párrafo a párrafo
+      while(isCurrentlyReading && currentChapter < epubChapters.length){
+        const ch=epubChapters[currentChapter];
+        showMiniPlayerWS(ch.title);
+        startWSWidgetSync();
+        btn.disabled=false;btn.innerHTML='▶ Leer';
+
+        const session=currentReadSession;
+        await readChapterByParagraphs(voiceId, session);
+
+        if(!isCurrentlyReading||session!==currentReadSession) break;
+
+        // Guardar y avanzar capítulo
+        if(currentChapter<epubChapters.length-1){
+          currentChapter++;
+          currentParaIndex=0;
+          currentCharOffset=0;
+          saveParaPosition();
+          _showChapterSilent(currentChapter);
+        } else {
+          // Fin del libro
+          stopBackgroundKeepalive();
+          clearInterval(_wsWidgetSync);
+          hideMiniPlayer();
+          const book=books.find(b=>b.epubKey===currentEpubKey);
+          if(book){book.status='read';saveBooks();renderBooks();updateStats();}
+          break;
+        }
+      }
     } else {
-      const cleanText=ch.content.replace(/\s+/g,' ').trim().substring(0,5000);
-      const blob=await ttsRequest(cleanText,voiceId,model);
-      if(blob!==null){
+      // API providers (ElevenLabs, OpenAI, etc.) — lectura por capítulo con audio
+      const model=PROVIDERS[currentProvider]?.models?.[0]?.id||'';
+      while(isCurrentlyReading && currentChapter < epubChapters.length){
+        const ch=epubChapters[currentChapter];
+        const parasInDom=document.querySelectorAll('.reader-para');
+        if(parasInDom.length>0) currentTotalParas=parasInDom.length;
+        saveParaPosition();
+        const cleanText=ch.content.replace(/\s+/g,' ').trim().substring(0,5000);
+        const session=currentReadSession;
+        const blob=await ttsRequest(cleanText,voiceId,model);
+        if(!isCurrentlyReading||session!==currentReadSession) break;
         const url=URL.createObjectURL(blob);
         setupPlayer('reader',url,blob,ch.title);
         document.getElementById('reader-player-wrap').style.display='block';
@@ -2519,18 +2388,17 @@ async function readCurrentChapter(){
         showMiniPlayer(audio,ch.title);
         audio.onended=()=>{
           document.getElementById('reader-play').textContent='▶';
-          document.getElementById('stop-btn').style.display='none';
+          stopBtn.style.display='none';
           if(currentChapter<epubChapters.length-1){
-            currentParaIndex = 0;
-            saveParaPosition();
-            setTimeout(()=>{showChapter(currentChapter+1);readCurrentChapter();},800);
+            currentParaIndex=0;saveParaPosition();
+            currentChapter++;_showChapterSilent(currentChapter);readCurrentChapter();
           } else {
-            stopBackgroundKeepalive();
-            hideMiniPlayer();
+            stopBackgroundKeepalive();hideMiniPlayer();
             const book=books.find(b=>b.epubKey===currentEpubKey);
             if(book){book.status='read';saveBooks();renderBooks();updateStats();}
           }
         };
+        return;
       }
     }
   }catch(e){
@@ -2538,6 +2406,7 @@ async function readCurrentChapter(){
     toast('❌ '+e.message);
   }
   btn.disabled=false;btn.innerHTML='▶ Leer';
+  stopBackgroundKeepalive();
 }
 
 function stopReading(){
@@ -2546,6 +2415,7 @@ function stopReading(){
   currentReadSession++;
   currentCharOffset = 0;
   activeUtterance = null;
+  clearInterval(_wsWidgetSync);
   const audio=audioElements['reader'];
   if(audio) audio.pause();
   if(window.speechSynthesis) window.speechSynthesis.cancel();
@@ -2553,7 +2423,10 @@ function stopReading(){
 
   document.querySelectorAll('.reader-para').forEach(el => {
     el.classList.remove('speaking');
-    if(el.querySelector('.speaking-word')) el.textContent = el.textContent;
+    // Limpiar resaltado de palabras sin perder el texto
+    if(el.querySelector('.speaking-word')||el.querySelector('mark')){
+      el.textContent = el.textContent;
+    }
   });
 
   const pb=document.getElementById('reader-play');
@@ -2624,11 +2497,11 @@ function toggleMiniPlay(){
       const rb=document.getElementById('read-btn');
       if(rb) rb.textContent='▶ Leer';
     } else {
-      // Reanudar: relanzar el loop desde la posición guardada sin reiniciar todo
+      // Reanudar: reiniciar lectura desde la posición guardada
       if(!epubChapters.length) return;
       isCurrentlyReading = true;
       document.getElementById('mp-play-btn').textContent='⏸';
-      playWebSpeechParagraphLoop();
+      readCurrentChapter();
     }
     return;
   }
@@ -2849,10 +2722,22 @@ function startBackgroundKeepalive(){
   requestWakeLock();
   // 1. Play a silent looping audio to hold AudioFocus
   if(!_silentAudio){
-    const silentMp3='data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAABAAADQgD///////////////////////////////////////////////////////////////////////////////////////////////////////////8AAAA5TGFNRQ==';
-    _silentAudio=new Audio(silentMp3);
-    _silentAudio.loop=true;
-    _silentAudio.volume=0.001;
+    // Generar silencio vía AudioContext para no disparar el MediaSession del SO (pantalla negra)
+    try{
+      const ctx=new (window.AudioContext||window.webkitAudioContext)();
+      const buf=ctx.createBuffer(1,ctx.sampleRate*2,ctx.sampleRate);
+      const src=ctx.createBufferSource();
+      src.buffer=buf;src.loop=true;
+      src.connect(ctx.destination);
+      src.start(0);
+      _silentAudio={play:()=>Promise.resolve(),pause:()=>{},currentTime:0,_ctx:ctx,_src:src};
+    }catch(e){
+      // Fallback al método anterior si AudioContext no está disponible
+      const silentMp3='data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAABAAADQgD///////////////////////////////////////////////////////////////////////////////////////////////////////////8AAAA5TGFNRQ==';
+      _silentAudio=new Audio(silentMp3);
+      _silentAudio.loop=true;
+      _silentAudio.volume=0.001;
+    }
   }
   _silentAudio.play().catch(()=>{});
   // 2. Watchdog: si WebSpeech se pausa, reanudar
@@ -2928,53 +2813,127 @@ document.addEventListener('DOMContentLoaded',()=>{
   }
 });
 
+function computeParaItemsFromDOM(){
+  const paras=document.querySelectorAll('.reader-para');
+  const items=[];
+  let off=0;
+  for(const p of paras){
+    const text=p.textContent;
+    items.push({text,start:off});
+    off+=text.length+1;
+  }
+  return items;
+}
+
+// Lee párrafo a párrafo con resaltado de palabras inline
+async function readChapterByParagraphs(voiceId, session){
+  if(!window.speechSynthesis) throw new Error('Tu navegador no soporta Web Speech API');
+  const synth=window.speechSynthesis;
+  const allVoices=synth.getVoices();
+  const found=allVoices.find(v=>v.voiceURI===voiceId)||null;
+  const lang=found?found.lang:'es-ES';
+
+  const paras=document.querySelectorAll('.reader-para');
+  if(!paras.length) return;
+
+  // Asegurar que currentParaIndex es válido
+  if(currentParaIndex>=paras.length) currentParaIndex=0;
+
+  for(let pi=currentParaIndex; pi<paras.length; pi++){
+    if(!isCurrentlyReading || session!==currentReadSession) return;
+    currentParaIndex=pi;
+    saveParaPosition();
+
+    const paraEl=paras[pi];
+    const originalHTML=paraEl.innerHTML;
+    const rawText=paraEl.textContent||'';
+    if(!rawText.trim()){continue;}
+
+    // Destacar párrafo activo
+    document.querySelectorAll('.reader-para').forEach(el=>el.classList.remove('speaking'));
+    paraEl.classList.add('speaking');
+    paraEl.scrollIntoView({behavior:'smooth',block:'center'});
+
+    // Función para resaltar palabra en el párrafo
+    function highlightWord(charIndex, charLength){
+      // Reconstruir el span con la palabra actual resaltada
+      const text=rawText;
+      const before=escHtml(text.substring(0,charIndex));
+      const word=escHtml(text.substring(charIndex, charIndex+(charLength||1)));
+      const after=escHtml(text.substring(charIndex+(charLength||1)));
+      paraEl.innerHTML=`${before}<mark class="speaking-word">${word}</mark>${after}`;
+    }
+
+    await new Promise((resolve)=>{
+      // Dividir párrafo en chunks si es muy largo
+      const chunks=[];
+      const sentences=rawText.match(/[^.!?]+[.!?]+[\s]*/g)||[rawText];
+      let cur='';
+      for(const s of sentences){
+        if((cur+s).length>800&&cur.length>0){chunks.push(cur.trim());cur=s;}
+        else cur+=s;
+      }
+      if(cur.trim()) chunks.push(cur.trim());
+      if(!chunks.length){resolve();return;}
+
+      let idx=0;
+      let chunkCharOffset=0;
+      let watchdog=null;
+
+      const speakNext=()=>{
+        if(idx>=chunks.length||!isCurrentlyReading||session!==currentReadSession){
+          clearTimeout(watchdog);
+          // Restaurar HTML original limpio al terminar el párrafo
+          paraEl.innerHTML=originalHTML;
+          resolve();
+          return;
+        }
+        const inReader=document.getElementById('panel-reader')?.classList.contains('active');
+        const rate=parseFloat(document.getElementById(inReader?'read-speed':'synth-speed')?.value||'1');
+        const pitch=parseFloat(document.getElementById(inReader?'read-pitch':'synth-pitch')?.value||'1');
+        const volume=parseFloat(document.getElementById('synth-vol')?.value||'1');
+        const utt=new SpeechSynthesisUtterance(chunks[idx]);
+        const thisChunkOffset=chunkCharOffset;
+        idx++;
+        utt.rate=rate;utt.pitch=pitch;utt.volume=volume;utt.lang=lang;
+        if(found) utt.voice=found;
+        utt.onboundary=(e)=>{
+          if(e.name!=='word') return;
+          const absIdx=thisChunkOffset+e.charIndex;
+          currentCharOffset=absIdx+(e.charLength||1);
+          highlightWord(absIdx, e.charLength||1);
+        };
+        utt.onend=()=>{
+          clearTimeout(watchdog);
+          chunkCharOffset+=chunks[idx-1].length+1;
+          speakNext();
+        };
+        utt.onerror=(e)=>{
+          clearTimeout(watchdog);
+          if(e.error==='interrupted'||e.error==='canceled'){
+            paraEl.innerHTML=originalHTML;
+            resolve();
+            return;
+          }
+          chunkCharOffset+=chunks[idx-1].length+1;
+          speakNext();
+        };
+        watchdog=setTimeout(()=>{synth.pause();synth.resume();watchdog=setTimeout(()=>speakNext(),500);},4000);
+        synth.speak(utt);
+      };
+      speakNext();
+    });
+
+    if(!isCurrentlyReading||session!==currentReadSession) return;
+  }
+}
 
 async function ttsRequest(text,voiceId,model){
   if(currentProvider==='webspeech'){
-    return new Promise((resolve,reject)=>{
-      if(!window.speechSynthesis){reject(new Error('Tu navegador no soporta Web Speech API'));return;}
-      window.speechSynthesis.cancel();
-      const speak=()=>{
-        const synth=window.speechSynthesis;
-        const allVoices=synth.getVoices();
-        const found=allVoices.find(v=>v.voiceURI===voiceId)||null;
-        const inReader=document.getElementById('panel-reader')?.classList.contains('active');
-        const rate=parseFloat(document.getElementById(inReader?'read-speed':'synth-speed')?.value||'1');
-        const pitch=parseFloat(document.getElementById('synth-pitch')?.value||'1');
-        const volume=parseFloat(document.getElementById('synth-vol')?.value||'1');
-        const lang=found?found.lang:'es-ES';
-        const raw=text.replace(/\s+/g,' ').trim();
-        const chunks=[];
-        const sentences=raw.match(/[^.!?]+[.!?]+[\s]*/g)||[raw];
-        let current='';
-        for(const s of sentences){
-          if((current+s).length>200&&current.length>0){chunks.push(current.trim());current=s;}
-          else current+=s;
-        }
-        if(current.trim()) chunks.push(current.trim());
-        if(!chunks.length){resolve(null);return;}
-        let idx=0;
-        let watchdog=null;
-        const speakNext=()=>{
-          if(idx>=chunks.length){clearTimeout(watchdog);resolve(null);return;}
-          const utt=new SpeechSynthesisUtterance(chunks[idx++]);
-          utt.rate=rate;utt.pitch=pitch;utt.volume=volume;utt.lang=lang;
-          if(found) utt.voice=found;
-          utt.onend=()=>{clearTimeout(watchdog);speakNext();};
-          utt.onerror=(e)=>{
-            clearTimeout(watchdog);
-            if(e.error==='interrupted'||e.error==='canceled'){resolve(null);return;}
-            speakNext();
-          };
-          watchdog=setTimeout(()=>{synth.pause();synth.resume();watchdog=setTimeout(()=>speakNext(),1500);},8000);
-          synth.speak(utt);
-        };
-        setTimeout(speakNext,100);
-      };
-      const vs=window.speechSynthesis.getVoices();
-      if(vs.length>0) speak();
-      else{window.speechSynthesis.onvoiceschanged=()=>speak();setTimeout(speak,1000);}
-    });
+    // WebSpeech: la lectura párrafo a párrafo se gestiona en readChapterByParagraphs
+    // Esta función sólo se llama para providers de API, pero retornamos null para WS
+    // indicando al caller que use el path WebSpeech directo
+    return null;
   }
 
   const key=apiKeys[currentProvider];
@@ -3231,15 +3190,7 @@ function loadVoicesForProvider(){
       attempts++;
       // Aplicar siempre que haya cambio o primeras veces
       if(raw.length!==lastCount){lastCount=raw.length;apply();}
-      // Forzar init del motor TTS en móvil con dummy real
-      if(attempts===1 && raw.length<=3) {
-        try{
-          let dummy = new SpeechSynthesisUtterance(' ');
-          dummy.volume = 0;dummy.rate=10;
-          window.speechSynthesis.speak(dummy);
-          setTimeout(()=>{window.speechSynthesis.cancel();},200);
-        }catch(e){}
-      }
+
       // Seguir intentando si pocas voces y no demasiados intentos
       if(esCount<=2&&attempts<25) setTimeout(tryLoad,600);
       else if(attempts<5) setTimeout(tryLoad,800);
