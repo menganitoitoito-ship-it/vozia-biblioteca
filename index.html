@@ -2202,6 +2202,8 @@ function _showChapterSilent(idx){
 
   const savedPara = localStorage.getItem('atk_para_' + currentEpubKey + '_' + currentChapter);
   currentParaIndex = savedPara !== null ? parseInt(savedPara) : 0;
+  const savedChar = localStorage.getItem('atk_charoff_' + currentEpubKey + '_' + currentChapter + '_' + currentParaIndex);
+  currentCharOffset = savedChar !== null ? parseInt(savedChar) : 0;
 
   highlightParagraph(currentParaIndex);
   restoreScrollPosition();
@@ -2240,6 +2242,8 @@ function showChapter(idx){
 
   const savedPara = localStorage.getItem('atk_para_' + currentEpubKey + '_' + currentChapter);
   currentParaIndex = savedPara !== null ? parseInt(savedPara) : 0;
+  const savedChar = localStorage.getItem('atk_charoff_' + currentEpubKey + '_' + currentChapter + '_' + currentParaIndex);
+  currentCharOffset = savedChar !== null ? parseInt(savedChar) : 0;
 
   highlightParagraph(currentParaIndex);
   restoreScrollPosition();
@@ -2305,8 +2309,14 @@ function jumpToParagraph(idx) {
 
 function updateReaderAudioSettings() {
   if (currentProvider === 'webspeech') {
-    // El rate/pitch se lee en tiempo real en cada utterance — no hay que hacer nada
-    // La siguiente utterance ya usará el nuevo valor
+    if (isCurrentlyReading && _wsControl && !_wsPaused) {
+      _wsControl.pause();
+      setTimeout(() => {
+        if (isCurrentlyReading && _wsPaused && _wsControl) {
+          _wsControl.resume();
+        }
+      }, 50);
+    }
   } else {
     const audio = audioElements['reader'];
     if (audio) {
@@ -2317,6 +2327,13 @@ function updateReaderAudioSettings() {
 
 async function readCurrentChapter(){
   const isWebSpeech=currentProvider==='webspeech';
+  if(isWebSpeech && isCurrentlyReading){
+    if(_wsControl){
+      if(_wsPaused) _wsControl.resume();
+      else _wsControl.pause();
+    }
+    return;
+  }
   if(!isWebSpeech&&!apiKeys[currentProvider]){openApiModal();return;}
   if(!epubChapters.length){toast('⚠️ Abre un libro primero');return;}
   const voiceId=document.getElementById('reader-voice').value;
@@ -2343,6 +2360,12 @@ async function readCurrentChapter(){
         showMiniPlayerWS(ch.title);
         startWSWidgetSync();
         btn.disabled=false;btn.innerHTML='▶ Leer';
+
+        // Cargar posición guardada antes de leer
+        const savedPara = localStorage.getItem('atk_para_' + currentEpubKey + '_' + currentChapter);
+        currentParaIndex = savedPara !== null ? parseInt(savedPara) : 0;
+        const savedChar = localStorage.getItem('atk_charoff_' + currentEpubKey + '_' + currentChapter + '_' + currentParaIndex);
+        currentCharOffset = savedChar !== null ? parseInt(savedChar) : 0;
 
         const session=currentReadSession;
         await readChapterByParagraphs(voiceId, session);
@@ -2413,7 +2436,6 @@ function stopReading(){
   saveParaPosition();
   isCurrentlyReading = false;
   currentReadSession++;
-  currentCharOffset = 0;
   activeUtterance = null;
   _wsControl = null;
   _wsPaused = false;
@@ -2717,32 +2739,24 @@ document.addEventListener('visibilitychange',()=>{
 function startBackgroundKeepalive(){
   window._wlRequested=true;
   requestWakeLock();
-  // 1. Play a silent looping audio to hold AudioFocus
+  // 1. Use <audio> element — reliable on iOS PWA (AudioContext is auto-suspended in background)
   if(!_silentAudio){
-    // Generar silencio vía AudioContext para no disparar el MediaSession del SO (pantalla negra)
-    try{
-      const ctx=new (window.AudioContext||window.webkitAudioContext)();
-      const buf=ctx.createBuffer(1,ctx.sampleRate*2,ctx.sampleRate);
-      const src=ctx.createBufferSource();
-      src.buffer=buf;src.loop=true;
-      src.connect(ctx.destination);
-      src.start(0);
-      _silentAudio={play:()=>Promise.resolve(),pause:()=>{},currentTime:0,_ctx:ctx,_src:src};
-    }catch(e){
-      // Fallback al método anterior si AudioContext no está disponible
-      const silentMp3='data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAABAAADQgD///////////////////////////////////////////////////////////////////////////////////////////////////////////8AAAA5TGFNRQ==';
-      _silentAudio=new Audio(silentMp3);
-      _silentAudio.loop=true;
-      _silentAudio.volume=0.001;
-    }
+    const silentMp3='data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAABAAADQgD///////////////////////////////////////////////////////////////////////////////////////////////////////////8AAAA5TGFNRQ==';
+    _silentAudio=new Audio(silentMp3);
+    _silentAudio.loop=true;
+    _silentAudio.volume=0.001;
+    _silentAudio.setAttribute('playsinline','');
+    _silentAudio.setAttribute('webkit-playsinline','');
+    _silentAudio.muted=false;
   }
   _silentAudio.play().catch(()=>{});
-  // 2. Watchdog: si WebSpeech se pausa, reanudar
+  // 2. Watchdog: si WebSpeech se pausa, reanudar. También mantiene el audio silencioso vivo.
   if(_bgKeepaliveTimer) clearInterval(_bgKeepaliveTimer);
   _bgKeepaliveTimer=setInterval(()=>{
     if(!window.speechSynthesis) return;
     if(window.speechSynthesis.paused) window.speechSynthesis.resume();
-  },4000);
+    if(_silentAudio && _silentAudio.paused) _silentAudio.play().catch(()=>{});
+  },3000);
 }
 
 function stopBackgroundKeepalive(){
@@ -2836,95 +2850,218 @@ async function readChapterByParagraphs(voiceId, session){
   const paras=document.querySelectorAll('.reader-para');
   if(!paras.length) return;
 
+  // Collect paragraphs with original HTML saved
   const paraData=[];
-  let offset=0;
   for(const p of paras){
-    const orig=p.innerHTML;
-    const t=(p.textContent||'').trim();
-    paraData.push({el:p,orig,text:t,start:offset});
-    offset+=t.length+1;
+    const hasSpans = p.querySelector('.ws-word') || p.querySelector('.speaking-word');
+    const orig = hasSpans ? p.textContent : p.innerHTML;
+    paraData.push({el:p, orig:orig, text:(p.textContent||'').trim()});
   }
 
-  let fullText='';
-  for(const pd of paraData){if(pd.text) fullText+=(fullText?' ':'')+pd.text;}
-  if(!fullText) return;
-
-  const allSpans=[];
-  for(const pd of paraData){
-    if(!pd.text) continue;
-    pd.el.classList.remove('speaking');
-    const tokens=pd.text.split(/(\s+)/);
-    let html='',charPos=pd.start;
-    for(const t of tokens){
-      const safe=escHtml(t);
-      if(/^\s+$/.test(t)){html+=safe;}
-      else{html+=`<span class="ws-word" data-ch="${charPos}">${safe}</span>`;charPos+=t.length;}
-    }
-    pd.el.innerHTML=html;
-    pd.el.querySelectorAll('.ws-word').forEach(s=>allSpans.push(s));
-  }
-
-  let activeWordEl=null, activePi=-1;
-  let timerId=null;
-
-  const highlightAt=(absIdx)=>{
-    let pi=0;
-    for(let i=paraData.length-1;i>=0;i--){
-      if(absIdx>=paraData[i].start-1){pi=i;break;}
-    }
-    if(pi!==activePi){
-      if(activePi>=0&&activePi<paraData.length){
-        paraData[activePi].el.innerHTML=paraData[activePi].orig;
-        paraData[activePi].el.classList.remove('speaking');
+  // ── SPLIT text into iOS-safe chunks (≤220 chars at sentence boundary)
+  const MAX_CHUNK=220;
+  function splitIntoChunks(text){
+    if(!text) return[];
+    if(text.length<=MAX_CHUNK) return[text];
+    const chunks=[];
+    let start=0;
+    while(start<text.length){
+      let end=start+MAX_CHUNK;
+      if(end<text.length){
+        // Try to split at sentence boundary
+        const sub=text.slice(start, end+60);
+        const m=/[.!?。]+\s+/.exec(sub.slice(0,MAX_CHUNK+30));
+        if(m && m.index>20) end=start+m.index+m[0].length;
+        else{
+          const sp=text.lastIndexOf(' ',start+MAX_CHUNK);
+          if(sp>start+20) end=sp+1;
+        }
       }
-      activePi=pi;
-      paraData[pi].el.classList.add('speaking');
-      paraData[pi].el.scrollIntoView({behavior:'smooth',block:'center'});
+      chunks.push(text.slice(start,end).trim());
+      start=end;
     }
-    if(activeWordEl) activeWordEl.classList.remove('speaking-word');
-    activeWordEl=null;
-    for(const s of allSpans){
-      if(parseInt(s.dataset.ch,10)<=absIdx) activeWordEl=s; else break;
+    return chunks.filter(Boolean);
+  }
+
+  let activeWordEl=null;
+
+  const highlightWordInPara=(pd, charIdx)=>{
+    if(activeWordEl){activeWordEl.classList.remove('speaking-word');activeWordEl=null;}
+    const spans=pd.el.querySelectorAll('.ws-word');
+    let best=null;
+    for(const s of spans){
+      if(parseInt(s.dataset.ch,10)<=charIdx) best=s; else break;
     }
+    activeWordEl=best;
     if(activeWordEl) activeWordEl.classList.add('speaking-word');
   };
 
+  const wrapParaWords=(pd)=>{
+    const tokens=pd.text.split(/(\s+)/);
+    let html='', charPos=0;
+    for(const t of tokens){
+      if(/^\s+$/.test(t)){html+=escHtml(t);}
+      else{html+=`<span class="ws-word" data-ch="${charPos}">${escHtml(t)}</span>`;charPos+=t.length;}
+    }
+    pd.el.innerHTML=html;
+  };
+
+  const restorePara=(pd)=>{
+    pd.el.innerHTML=pd.orig;
+    pd.el.classList.remove('speaking');
+  };
+
   const cleanupAll=()=>{
-    clearInterval(timerId);
     if(activeWordEl){activeWordEl.classList.remove('speaking-word');activeWordEl=null;}
-    for(const pd of paraData){pd.el.innerHTML=pd.orig;pd.el.classList.remove('speaking');}
+    for(const pd of paraData) restorePara(pd);
   };
 
   await new Promise((resolve)=>{
     let finished=false;
-    const done=()=>{if(!finished){finished=true;_wsControl=null;clearInterval(timerId);cleanupAll();resolve();}};
-
-    let charsPerSec=14*rate;
-    let speechStart=0;
+    let mySession=0; // internal chunk session
+    let piCurrent=currentParaIndex; // Start from current paragraph position!
+    let isFirstParagraph=true;
+    let startingCharOffset=currentCharOffset;
+    let timerId=null;
     let progress=0;
-    let resumeOffset=0;
     let chunkStartTime=0;
+    let chunkStartOffset=0;
 
-    const tick=()=>{
-      if(finished) return;
-      const elapsed=(Date.now()-speechStart)/1000;
-      const est=Math.min(Math.floor(elapsed*charsPerSec+resumeOffset),fullText.length);
-      if(est>progress){
-        progress=est;
-        currentCharOffset=est;
-        highlightAt(est);
-      }
+    const done=()=>{
+      if(timerId){clearInterval(timerId);timerId=null;}
+      if(!finished){finished=true;_wsControl=null;cleanupAll();resolve();}
     };
 
-    let _chunkSession=0;
+    const speakChunksOfPara=(pi, chunkIdx, sessionId)=>{
+      // Skip empty paragraphs
+      while(pi<paraData.length && !paraData[pi].text) pi++;
+      piCurrent=pi;
+      currentParaIndex=pi; // Track globally
+      saveParaPosition();
+
+      if(pi>=paraData.length){done();return;}
+      if(sessionId!==mySession||_wsPaused||!isCurrentlyReading) return;
+
+      const pd=paraData[pi];
+      
+      // Initialize paragraph if not already done
+      if(!pd.el.classList.contains('speaking')){
+        for(let i=0;i<paraData.length;i++) if(i!==pi) restorePara(paraData[i]);
+        pd.el.classList.add('speaking');
+        pd.el.scrollIntoView({behavior:'smooth',block:'center'});
+        wrapParaWords(pd);
+      }
+
+      const chunks=splitIntoChunks(pd.text);
+
+      let sliceOffset=0;
+      if(isFirstParagraph){
+        isFirstParagraph=false;
+        if(startingCharOffset>0){
+          let chunkStart=0;
+          let targetChunkIdx=0;
+          for(let c=0;c<chunks.length;c++){
+            if(chunkStart+chunks[c].length>startingCharOffset){
+              targetChunkIdx=c;
+              break;
+            }
+            chunkStart+=chunks[c].length+1;
+          }
+          chunkIdx=targetChunkIdx;
+          sliceOffset=startingCharOffset-chunkStart;
+          if(sliceOffset<0) sliceOffset=0;
+        }
+      }
+
+      if(chunkIdx>=chunks.length){
+        // Paragraph done — restore HTML and move to next
+        restorePara(pd);
+        if(activeWordEl){activeWordEl.classList.remove('speaking-word');activeWordEl=null;}
+        speakChunksOfPara(pi+1, 0, sessionId);
+        return;
+      }
+
+      // Compute char offset of this chunk within the paragraph
+      let chunkStart=0;
+      for(let c=0;c<chunkIdx;c++) chunkStart+=chunks[c].length+1; // +1 for removed space
+
+      const chunk=chunks[chunkIdx];
+      const chunkText=chunk.substring(sliceOffset).trim();
+
+      if(!chunkText){
+        // If empty, just move to next chunk
+        speakChunksOfPara(pi, chunkIdx+1, sessionId);
+        return;
+      }
+
+      const utt=new SpeechSynthesisUtterance(chunkText);
+      const liveRate=parseFloat(document.getElementById(inReader?'read-speed':'synth-speed')?.value||'1');
+      const livePitch=parseFloat(document.getElementById(inReader?'read-pitch':'synth-pitch')?.value||'1');
+      const liveVolume=parseFloat(document.getElementById('synth-vol')?.value||'1');
+      utt.rate=liveRate; utt.pitch=livePitch; utt.volume=liveVolume; utt.lang=lang;
+      if(found) utt.voice=found;
+
+      // Timer baseline setup
+      chunkStartOffset=chunkStart+sliceOffset;
+      chunkStartTime=Date.now();
+      progress=chunkStartOffset;
+      currentCharOffset=chunkStartOffset;
+      saveParaPosition();
+      highlightWordInPara(pd, chunkStartOffset);
+
+      if(timerId) clearInterval(timerId);
+      const tick=()=>{
+        if(finished||_wsPaused||sessionId!==mySession) return;
+        const currentRate=parseFloat(document.getElementById(inReader?'read-speed':'synth-speed')?.value||'1');
+        const elapsed=(Date.now()-chunkStartTime)/1000;
+        const est=chunkStartOffset+Math.floor(elapsed*13*currentRate);
+        const cap=chunkStart+sliceOffset+chunkText.length;
+        const estCapped=Math.min(est,cap);
+        if(estCapped>progress){
+          progress=estCapped;
+          currentCharOffset=estCapped;
+          highlightWordInPara(pd,estCapped);
+        }
+      };
+      timerId=setInterval(tick,50);
+
+      // Word highlighting via boundary events
+      utt.onboundary=(e)=>{
+        if(sessionId!==mySession||_wsPaused||e.name!=='word') return;
+        const absChar=chunkStart+sliceOffset+e.charIndex;
+        chunkStartOffset=absChar;
+        chunkStartTime=Date.now();
+        progress=absChar;
+        currentCharOffset=absChar;
+        highlightWordInPara(pd,absChar);
+      };
+
+      utt.onend=()=>{
+        if(timerId) clearInterval(timerId);
+        if(sessionId!==mySession) return;
+        if(!_wsPaused && isCurrentlyReading){
+          speakChunksOfPara(pi, chunkIdx+1, sessionId);
+        }
+      };
+
+      utt.onerror=(e)=>{
+        if(timerId) clearInterval(timerId);
+        if(sessionId!==mySession||e.error==='interrupted'||e.error==='canceled') return;
+        done();
+      };
+
+      synth.speak(utt);
+      // iOS Safari needs this to actually start speaking
+      synth.pause();
+      synth.resume();
+    };
 
     _wsControl={
       pause:()=>{
         if(finished) return;
         _wsPaused=true;
-        _chunkSession++;
-        clearInterval(timerId);timerId=null;
-        _wsResumePos=progress;
+        mySession++;
+        if(timerId){clearInterval(timerId);timerId=null;}
         if(window.speechSynthesis) window.speechSynthesis.cancel();
         document.getElementById('mp-play-btn').textContent='▶';
         const rb=document.getElementById('read-btn');if(rb) rb.textContent='▶ Leer';
@@ -2932,60 +3069,23 @@ async function readChapterByParagraphs(voiceId, session){
       resume:()=>{
         if(finished||!isCurrentlyReading) return;
         _wsPaused=false;
-        clearInterval(timerId);timerId=null;
-        const resumeSession=++_chunkSession;
+        const resumeSession=++mySession;
+        
+        // Reset startingCharOffset so it uses the position where we paused
+        startingCharOffset=currentCharOffset;
+        isFirstParagraph=true; 
+
         setTimeout(()=>{
-          if(_chunkSession===resumeSession&&!finished&&!_wsPaused){
-            speakFrom(_wsResumePos);
+          if(mySession===resumeSession&&!finished&&!_wsPaused){
+            speakChunksOfPara(piCurrent, 0, resumeSession);
           }
-        },80);
+        },100);
         document.getElementById('mp-play-btn').textContent='⏸';
         const rb=document.getElementById('read-btn');if(rb) rb.textContent='⏸ Leyendo…';
       }
     };
 
-    const speakFrom=(pos)=>{
-      if(!isCurrentlyReading||session!==currentReadSession||pos>=fullText.length){done();return;}
-      const mySession=_chunkSession;
-      const chunk=fullText.substring(pos,pos+1200);
-      const utt=new SpeechSynthesisUtterance(chunk);
-      utt.rate=rate;utt.pitch=pitch;utt.volume=volume;utt.lang=lang;
-      if(found) utt.voice=found;
-
-      utt.onstart=()=>{
-        const now=Date.now();
-        resumeOffset=pos;
-        speechStart=now;
-        chunkStartTime=now;
-        progress=pos;
-        currentCharOffset=pos;
-        highlightAt(pos);
-        if(!timerId) timerId=setInterval(tick,40);
-      };
-      utt.onboundary=(e)=>{
-        if(_wsPaused||e.name!=='word') return;
-        const abs=pos+e.charIndex;
-        if(abs>progress){
-          progress=abs;currentCharOffset=abs+(e.charLength||1);highlightAt(abs);
-        }
-      };
-      utt.onend=()=>{
-        if(_wsPaused||_chunkSession!==mySession) return;
-        const chunkTime=(Date.now()-chunkStartTime)/1000;
-        if(chunkTime>0.3&&chunk.length>20){
-          charsPerSec=chunk.length/chunkTime;
-        }
-        speakFrom(pos+chunk.length);
-      };
-      utt.onerror=(e)=>{
-        if(e.error==='interrupted'||e.error==='canceled'||_chunkSession!==mySession) return;
-        clearInterval(timerId);done();
-      };
-      synth.speak(utt);
-      synth.pause();
-      synth.resume();
-    };
-    speakFrom(0);
+    speakChunksOfPara(piCurrent, 0, mySession);
   });
 }
 
@@ -3191,50 +3291,51 @@ function updatePitchLabel(sliderId,labelId){
 function loadWebSpeechVoices(){
   if(!window.speechSynthesis) return[];
   const raw=window.speechSynthesis.getVoices();
-  // Capturar todas las variantes de español (es-, es_, ES)
+  if(!raw.length){
+    return[{voice_id:'__fallback__',name:'⚠️ Sin voces instaladas — activa voces en Ajustes del dispositivo',labels:{lang:'',accent:''}}];
+  }
+  // Preferir voces en español; si hay 2 o menos, mostrar TODAS las voces del sistema
   const esVoices=raw.filter(v=>{
     const l=(v.lang||'').toLowerCase().replace('_','-');
     return l.startsWith('es');
   });
-  // Si no hay voces en español, mostrar TODAS las disponibles como fallback
-  const pool = esVoices.length ? esVoices : raw;
-  if(!pool.length){
-    return[{voice_id:'__fallback__',name:'⚠️ Sin voces instaladas — activa voces en Ajustes',labels:{lang:'es',accent:''}}];
-  }
-  const ACCENT_LABELS={
-    'es-es':'🇪🇸 España','es-mx':'🇲🇽 México','es-us':'🇺🇸 EEUU',
-    'es-ar':'🇦🇷 Argentina','es-co':'🇨🇴 Colombia','es-419':'🌎 Latam','es-xl':'🌎 Latam'
+  const pool = esVoices.length > 2 ? esVoices : raw;
+
+  const LANG_FLAGS={
+    'es-es':'🇪🇸','es-mx':'🇲🇽','es-us':'🇺🇸','es-ar':'🇦🇷',
+    'es-co':'🇨🇴','es-419':'🌎','es-xl':'🌎',
+    'en-us':'🇺🇸','en-gb':'🇬🇧','en-au':'🇦🇺',
+    'fr-fr':'🇫🇷','de-de':'🇩🇪','it-it':'🇮🇹',
+    'pt-br':'🇧🇷','pt-pt':'🇵🇹','ja-jp':'🇯🇵','zh-cn':'🇨🇳'
   };
-  // Score: Google/Microsoft/Apple first, then any. Don't filter out valid Android voices.
   const quality=['google','microsoft','apple','samsung'];
   const score=v=>{
     const n=v.name.toLowerCase();
     if(quality.some(w=>n.includes(w))) return 10;
-    if(!v.localService) return 5; // network voices tend to be better
+    if(!v.localService) return 5;
     return 1;
   };
   const seen=new Set();
   return pool
     .filter(v=>{ const k=v.voiceURI; if(seen.has(k)) return false; seen.add(k); return true; })
-    .sort((a,b)=>score(b)-score(a))
+    .sort((a,b)=>{
+      // Spanish voices first, then by quality
+      const aEs=a.lang.toLowerCase().startsWith('es')?1:0;
+      const bEs=b.lang.toLowerCase().startsWith('es')?1:0;
+      if(aEs!==bEs) return bEs-aEs;
+      return score(b)-score(a);
+    })
     .map(v=>{
       const langKey=(v.lang||'').toLowerCase().replace('_','-').slice(0,5);
-      const accent=ACCENT_LABELS[langKey]||('🌍 '+v.lang);
+      const flag=LANG_FLAGS[langKey]||'🌐';
       let cleanName=v.name.replace(/\s*\([a-z]{2}[-_][A-Z]{2,3}\)\s*$/,'').trim();
-
-      // Extract voice code variant from voiceURI if name is generic (like Google voices)
       const match=v.voiceURI.match(/-x-([a-z0-9]+)/i);
       const variant=match?match[1]:'';
-      if(variant&&!cleanName.toLowerCase().includes(variant)){
-        cleanName+=` (${variant})`;
-      }
-
-      // Determine gender
+      if(variant&&!cleanName.toLowerCase().includes(variant)) cleanName+=` (${variant})`;
       const lowerName=(v.name+' '+v.voiceURI).toLowerCase();
       const isFemale=lowerName.includes('female')||['helena','monica','lucia','sofia','maria','paloma','paulina','elena','sabina'].some(n=>lowerName.includes(n));
       const genderHint=isFemale?'♀':'♂';
-
-      return{voice_id:v.voiceURI,name:cleanName+' '+genderHint+' '+accent,labels:{lang:'es',accent:v.lang},_wsVoice:v};
+      return{voice_id:v.voiceURI,name:`${flag} ${cleanName} ${genderHint} — ${v.lang}`,labels:{lang:v.lang,accent:v.lang},_wsVoice:v};
     });
 }
 
