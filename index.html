@@ -2415,6 +2415,8 @@ function stopReading(){
   currentReadSession++;
   currentCharOffset = 0;
   activeUtterance = null;
+  _wsControl = null;
+  _wsPaused = false;
   clearInterval(_wsWidgetSync);
   const audio=audioElements['reader'];
   if(audio) audio.pause();
@@ -2423,8 +2425,7 @@ function stopReading(){
 
   document.querySelectorAll('.reader-para').forEach(el => {
     el.classList.remove('speaking');
-    // Limpiar resaltado de palabras sin perder el texto
-    if(el.querySelector('.speaking-word')||el.querySelector('mark')){
+    if(el.querySelector('.speaking-word')||el.querySelector('.ws-word')||el.querySelector('mark')){
       el.textContent = el.textContent;
     }
   });
@@ -2444,6 +2445,8 @@ function stopReading(){
 // ═══════════════════════════════════════════
 // Sincronizar widget con estado real de WebSpeech
 let _wsWidgetSync = null;
+let _wsControl = null;
+let _wsPaused = false;
 function startWSWidgetSync(){
   clearInterval(_wsWidgetSync);
   _wsWidgetSync = setInterval(()=>{
@@ -2487,17 +2490,11 @@ function showMiniPlayerWS(chapterTitle){
 
 function toggleMiniPlay(){
   if(currentProvider==='webspeech'){
-    if(isCurrentlyReading){
-      // Parar: guardar posición y cancelar síntesis
-      saveParaPosition();
-      isCurrentlyReading = false;
-      currentReadSession++; // invalida el loop actual
-      if(window.speechSynthesis) window.speechSynthesis.cancel();
-      document.getElementById('mp-play-btn').textContent='▶';
-      const rb=document.getElementById('read-btn');
-      if(rb) rb.textContent='▶ Leer';
+    if(_wsControl && _wsPaused){
+      _wsControl.resume();
+    } else if(_wsControl && isCurrentlyReading){
+      _wsControl.pause();
     } else {
-      // Reanudar: reiniciar lectura desde la posición guardada
       if(!epubChapters.length) return;
       isCurrentlyReading = true;
       document.getElementById('mp-play-btn').textContent='⏸';
@@ -2825,107 +2822,171 @@ function computeParaItemsFromDOM(){
   return items;
 }
 
-// Lee párrafo a párrafo con resaltado de palabras inline
 async function readChapterByParagraphs(voiceId, session){
   if(!window.speechSynthesis) throw new Error('Tu navegador no soporta Web Speech API');
   const synth=window.speechSynthesis;
   const allVoices=synth.getVoices();
   const found=allVoices.find(v=>v.voiceURI===voiceId)||null;
   const lang=found?found.lang:'es-ES';
+  const inReader=document.getElementById('panel-reader')?.classList.contains('active');
+  const rate=parseFloat(document.getElementById(inReader?'read-speed':'synth-speed')?.value||'1');
+  const pitch=parseFloat(document.getElementById(inReader?'read-pitch':'synth-pitch')?.value||'1');
+  const volume=parseFloat(document.getElementById('synth-vol')?.value||'1');
 
   const paras=document.querySelectorAll('.reader-para');
   if(!paras.length) return;
 
-  // Asegurar que currentParaIndex es válido
-  if(currentParaIndex>=paras.length) currentParaIndex=0;
-
-  for(let pi=currentParaIndex; pi<paras.length; pi++){
-    if(!isCurrentlyReading || session!==currentReadSession) return;
-    currentParaIndex=pi;
-    saveParaPosition();
-
-    const paraEl=paras[pi];
-    const originalHTML=paraEl.innerHTML;
-    const rawText=paraEl.textContent||'';
-    if(!rawText.trim()){continue;}
-
-    // Destacar párrafo activo
-    document.querySelectorAll('.reader-para').forEach(el=>el.classList.remove('speaking'));
-    paraEl.classList.add('speaking');
-    paraEl.scrollIntoView({behavior:'smooth',block:'center'});
-
-    // Función para resaltar palabra en el párrafo
-    function highlightWord(charIndex, charLength){
-      // Reconstruir el span con la palabra actual resaltada
-      const text=rawText;
-      const before=escHtml(text.substring(0,charIndex));
-      const word=escHtml(text.substring(charIndex, charIndex+(charLength||1)));
-      const after=escHtml(text.substring(charIndex+(charLength||1)));
-      paraEl.innerHTML=`${before}<mark class="speaking-word">${word}</mark>${after}`;
-    }
-
-    await new Promise((resolve)=>{
-      // Dividir párrafo en chunks si es muy largo
-      const chunks=[];
-      const sentences=rawText.match(/[^.!?]+[.!?]+[\s]*/g)||[rawText];
-      let cur='';
-      for(const s of sentences){
-        if((cur+s).length>800&&cur.length>0){chunks.push(cur.trim());cur=s;}
-        else cur+=s;
-      }
-      if(cur.trim()) chunks.push(cur.trim());
-      if(!chunks.length){resolve();return;}
-
-      let idx=0;
-      let chunkCharOffset=0;
-      let watchdog=null;
-
-      const speakNext=()=>{
-        if(idx>=chunks.length||!isCurrentlyReading||session!==currentReadSession){
-          clearTimeout(watchdog);
-          // Restaurar HTML original limpio al terminar el párrafo
-          paraEl.innerHTML=originalHTML;
-          resolve();
-          return;
-        }
-        const inReader=document.getElementById('panel-reader')?.classList.contains('active');
-        const rate=parseFloat(document.getElementById(inReader?'read-speed':'synth-speed')?.value||'1');
-        const pitch=parseFloat(document.getElementById(inReader?'read-pitch':'synth-pitch')?.value||'1');
-        const volume=parseFloat(document.getElementById('synth-vol')?.value||'1');
-        const utt=new SpeechSynthesisUtterance(chunks[idx]);
-        const thisChunkOffset=chunkCharOffset;
-        idx++;
-        utt.rate=rate;utt.pitch=pitch;utt.volume=volume;utt.lang=lang;
-        if(found) utt.voice=found;
-        utt.onboundary=(e)=>{
-          if(e.name!=='word') return;
-          const absIdx=thisChunkOffset+e.charIndex;
-          currentCharOffset=absIdx+(e.charLength||1);
-          highlightWord(absIdx, e.charLength||1);
-        };
-        utt.onend=()=>{
-          clearTimeout(watchdog);
-          chunkCharOffset+=chunks[idx-1].length+1;
-          speakNext();
-        };
-        utt.onerror=(e)=>{
-          clearTimeout(watchdog);
-          if(e.error==='interrupted'||e.error==='canceled'){
-            paraEl.innerHTML=originalHTML;
-            resolve();
-            return;
-          }
-          chunkCharOffset+=chunks[idx-1].length+1;
-          speakNext();
-        };
-        watchdog=setTimeout(()=>{synth.pause();synth.resume();watchdog=setTimeout(()=>speakNext(),500);},4000);
-        synth.speak(utt);
-      };
-      speakNext();
-    });
-
-    if(!isCurrentlyReading||session!==currentReadSession) return;
+  const paraData=[];
+  let offset=0;
+  for(const p of paras){
+    const orig=p.innerHTML;
+    const t=(p.textContent||'').trim();
+    paraData.push({el:p,orig,text:t,start:offset});
+    offset+=t.length+1;
   }
+
+  let fullText='';
+  for(const pd of paraData){if(pd.text) fullText+=(fullText?' ':'')+pd.text;}
+  if(!fullText) return;
+
+  const allSpans=[];
+  for(const pd of paraData){
+    if(!pd.text) continue;
+    pd.el.classList.remove('speaking');
+    const tokens=pd.text.split(/(\s+)/);
+    let html='',charPos=pd.start;
+    for(const t of tokens){
+      const safe=escHtml(t);
+      if(/^\s+$/.test(t)){html+=safe;}
+      else{html+=`<span class="ws-word" data-ch="${charPos}">${safe}</span>`;charPos+=t.length;}
+    }
+    pd.el.innerHTML=html;
+    pd.el.querySelectorAll('.ws-word').forEach(s=>allSpans.push(s));
+  }
+
+  let activeWordEl=null, activePi=-1;
+  let timerId=null;
+
+  const highlightAt=(absIdx)=>{
+    let pi=0;
+    for(let i=paraData.length-1;i>=0;i--){
+      if(absIdx>=paraData[i].start-1){pi=i;break;}
+    }
+    if(pi!==activePi){
+      if(activePi>=0&&activePi<paraData.length){
+        paraData[activePi].el.innerHTML=paraData[activePi].orig;
+        paraData[activePi].el.classList.remove('speaking');
+      }
+      activePi=pi;
+      paraData[pi].el.classList.add('speaking');
+      paraData[pi].el.scrollIntoView({behavior:'smooth',block:'center'});
+    }
+    if(activeWordEl) activeWordEl.classList.remove('speaking-word');
+    activeWordEl=null;
+    for(const s of allSpans){
+      if(parseInt(s.dataset.ch,10)<=absIdx) activeWordEl=s; else break;
+    }
+    if(activeWordEl) activeWordEl.classList.add('speaking-word');
+  };
+
+  const cleanupAll=()=>{
+    clearInterval(timerId);
+    if(activeWordEl){activeWordEl.classList.remove('speaking-word');activeWordEl=null;}
+    for(const pd of paraData){pd.el.innerHTML=pd.orig;pd.el.classList.remove('speaking');}
+  };
+
+  await new Promise((resolve)=>{
+    let finished=false;
+    const done=()=>{if(!finished){finished=true;_wsControl=null;clearInterval(timerId);cleanupAll();resolve();}};
+
+    let charsPerSec=14*rate;
+    let speechStart=0;
+    let progress=0;
+    let resumeOffset=0;
+    let chunkStartTime=0;
+
+    const tick=()=>{
+      if(finished) return;
+      const elapsed=(Date.now()-speechStart)/1000;
+      const est=Math.min(Math.floor(elapsed*charsPerSec+resumeOffset),fullText.length);
+      if(est>progress){
+        progress=est;
+        currentCharOffset=est;
+        highlightAt(est);
+      }
+    };
+
+    let _chunkSession=0;
+
+    _wsControl={
+      pause:()=>{
+        if(finished) return;
+        _wsPaused=true;
+        _chunkSession++;
+        clearInterval(timerId);timerId=null;
+        _wsResumePos=progress;
+        if(window.speechSynthesis) window.speechSynthesis.cancel();
+        document.getElementById('mp-play-btn').textContent='▶';
+        const rb=document.getElementById('read-btn');if(rb) rb.textContent='▶ Leer';
+      },
+      resume:()=>{
+        if(finished||!isCurrentlyReading) return;
+        _wsPaused=false;
+        clearInterval(timerId);timerId=null;
+        const resumeSession=++_chunkSession;
+        setTimeout(()=>{
+          if(_chunkSession===resumeSession&&!finished&&!_wsPaused){
+            speakFrom(_wsResumePos);
+          }
+        },80);
+        document.getElementById('mp-play-btn').textContent='⏸';
+        const rb=document.getElementById('read-btn');if(rb) rb.textContent='⏸ Leyendo…';
+      }
+    };
+
+    const speakFrom=(pos)=>{
+      if(!isCurrentlyReading||session!==currentReadSession||pos>=fullText.length){done();return;}
+      const mySession=_chunkSession;
+      const chunk=fullText.substring(pos,pos+1200);
+      const utt=new SpeechSynthesisUtterance(chunk);
+      utt.rate=rate;utt.pitch=pitch;utt.volume=volume;utt.lang=lang;
+      if(found) utt.voice=found;
+
+      utt.onstart=()=>{
+        const now=Date.now();
+        resumeOffset=pos;
+        speechStart=now;
+        chunkStartTime=now;
+        progress=pos;
+        currentCharOffset=pos;
+        highlightAt(pos);
+        if(!timerId) timerId=setInterval(tick,40);
+      };
+      utt.onboundary=(e)=>{
+        if(_wsPaused||e.name!=='word') return;
+        const abs=pos+e.charIndex;
+        if(abs>progress){
+          progress=abs;currentCharOffset=abs+(e.charLength||1);highlightAt(abs);
+        }
+      };
+      utt.onend=()=>{
+        if(_wsPaused||_chunkSession!==mySession) return;
+        const chunkTime=(Date.now()-chunkStartTime)/1000;
+        if(chunkTime>0.3&&chunk.length>20){
+          charsPerSec=chunk.length/chunkTime;
+        }
+        speakFrom(pos+chunk.length);
+      };
+      utt.onerror=(e)=>{
+        if(e.error==='interrupted'||e.error==='canceled'||_chunkSession!==mySession) return;
+        clearInterval(timerId);done();
+      };
+      synth.speak(utt);
+      synth.pause();
+      synth.resume();
+    };
+    speakFrom(0);
+  });
 }
 
 async function ttsRequest(text,voiceId,model){
