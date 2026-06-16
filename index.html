@@ -2482,8 +2482,12 @@ function startWSWidgetSync(){
 }
 
 function showMiniPlayerWS(chapterTitle){
-  // Widget para WebSpeech: sin audio real, controla speechSynthesis directamente
-  miniPlayerAudio = null; // no hay audio real
+  // Widget para WebSpeech: usa el audio silencioso para respaldar MediaSession y evitar que el SO suspenda la app
+  if(!_silentAudio){
+    startBackgroundKeepalive();
+    stopBackgroundKeepalive();
+  }
+  miniPlayerAudio = _silentAudio;
   const mp = document.getElementById('mini-player');
   mp.classList.add('visible');
   document.getElementById('mp-chapter').textContent = chapterTitle||'—';
@@ -2680,7 +2684,7 @@ function updateMediaSession(){
 
   // Position state (enables seek bar on lock screen)
   try{
-    if(miniPlayerAudio.duration && !isNaN(miniPlayerAudio.duration)){
+    if(currentProvider !== 'webspeech' && miniPlayerAudio.duration && !isNaN(miniPlayerAudio.duration)){
       navigator.mediaSession.setPositionState({
         duration: miniPlayerAudio.duration,
         playbackRate: miniPlayerAudio.playbackRate||1,
@@ -2693,6 +2697,7 @@ function updateMediaSession(){
   if(!miniPlayerAudio._msSync){
     miniPlayerAudio._msSync=true;
     miniPlayerAudio.addEventListener('timeupdate',()=>{
+      if(currentProvider === 'webspeech') return;
       if(!('mediaSession' in navigator)||!miniPlayerAudio.duration||isNaN(miniPlayerAudio.duration)) return;
       try{
         navigator.mediaSession.setPositionState({
@@ -2741,7 +2746,7 @@ function startBackgroundKeepalive(){
   requestWakeLock();
   // 1. Use <audio> element — reliable on iOS PWA (AudioContext is auto-suspended in background)
   if(!_silentAudio){
-    const silentMp3='data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAABAAADQgD///////////////////////////////////////////////////////////////////////////////////////////////////////////8AAAA5TGFNRQ==';
+    const silentMp3='data:audio/mpeg;base64,SUQzBAAAAAABEVRYWFgAAAAtAAADY29tbWVudABCaW5hcnkgZGF0YSB0byBwbGF5IGEgc2lsZW50IG1wMy4A//uQZAAAAAAAEEcUAAAgYcwAAAEAAAJCeeP/7kGQAAAAAAAEEcUAAAgYcwAAAEAAAJCeeP/7kGQAAAAAAAEEcUAAAgYcwAAAEAAAJCeeP/7kGQAAAAAAAEEcUAAAgYcwAAAEAAAJCeeQ==';
     _silentAudio=new Audio(silentMp3);
     _silentAudio.loop=true;
     _silentAudio.volume=0.001;
@@ -3063,13 +3068,16 @@ async function readChapterByParagraphs(voiceId, session){
         mySession++;
         if(timerId){clearInterval(timerId);timerId=null;}
         if(window.speechSynthesis) window.speechSynthesis.cancel();
+        if(_silentAudio) _silentAudio.pause();
         document.getElementById('mp-play-btn').textContent='▶';
         const rb=document.getElementById('read-btn');if(rb) rb.textContent='▶ Leer';
+        updateMediaSession();
       },
       resume:()=>{
         if(finished||!isCurrentlyReading) return;
         _wsPaused=false;
         const resumeSession=++mySession;
+        if(_silentAudio) _silentAudio.play().catch(()=>{});
         
         // Reset startingCharOffset so it uses the position where we paused
         startingCharOffset=currentCharOffset;
@@ -3082,6 +3090,7 @@ async function readChapterByParagraphs(voiceId, session){
         },100);
         document.getElementById('mp-play-btn').textContent='⏸';
         const rb=document.getElementById('read-btn');if(rb) rb.textContent='⏸ Leyendo…';
+        updateMediaSession();
       }
     };
 
@@ -3294,12 +3303,15 @@ function loadWebSpeechVoices(){
   if(!raw.length){
     return[{voice_id:'__fallback__',name:'⚠️ Sin voces instaladas — activa voces en Ajustes del dispositivo',labels:{lang:'',accent:''}}];
   }
-  // Preferir voces en español; si hay 2 o menos, mostrar TODAS las voces del sistema
+  // Filtrar exclusivamente voces en español
   const esVoices=raw.filter(v=>{
     const l=(v.lang||'').toLowerCase().replace('_','-');
-    return l.startsWith('es');
+    return l.startsWith('es') || l.startsWith('spa');
   });
-  const pool = esVoices.length > 2 ? esVoices : raw;
+  if(!esVoices.length){
+    return[{voice_id:'__fallback__',name:'⚠️ Sin voces en español instaladas',labels:{lang:'es',accent:''}}];
+  }
+  const pool = esVoices;
 
   const LANG_FLAGS={
     'es-es':'🇪🇸','es-mx':'🇲🇽','es-us':'🇺🇸','es-ar':'🇦🇷',

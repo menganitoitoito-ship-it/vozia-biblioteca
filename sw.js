@@ -1,7 +1,7 @@
 // Audioteka Service Worker — v2
 // Handles: offline caching, background audio keep-alive, push notifications
 
-const CACHE_NAME = 'audioteka-v5';
+const CACHE_NAME = 'audioteka-v6';
 
 // Assets to precache on install
 const PRECACHE_URLS = [
