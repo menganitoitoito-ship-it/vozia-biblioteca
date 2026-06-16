@@ -2794,6 +2794,7 @@ let _silentAudio=null;
 let _bgKeepaliveTimer=null;
 let _bgAudioCtx=null;
 let _bgOsc=null;
+let _bgStreamAudio=null;
 
 // ── WAKE LOCK — mantiene la pantalla activa mientras lee ──
 let _wakeLock=null;
@@ -2816,7 +2817,7 @@ document.addEventListener('visibilitychange',()=>{
 function startBackgroundKeepalive(){
   window._wlRequested=true;
   requestWakeLock();
-  // 1. Use <audio> element — reliable on iOS PWA (AudioContext is auto-suspended in background)
+  // 1. Use <audio> element — reliable on iOS PWA
   if(!_silentAudio){
     const silentMp3='data:audio/mpeg;base64,SUQzBAAAAAABEVRYWFgAAAAtAAADY29tbWVudABCaW5hcnkgZGF0YSB0byBwbGF5IGEgc2lsZW50IG1wMy4A//uQZAAAAAAAEEcUAAAgYcwAAAEAAAJCeeP/7kGQAAAAAAAEEcUAAAgYcwAAAEAAAJCeeP/7kGQAAAAAAAEEcUAAAgYcwAAAEAAAJCeeP/7kGQAAAAAAAEEcUAAAgYcwAAAEAAAJCeeQ==';
     _silentAudio=new Audio(silentMp3);
@@ -2827,41 +2828,56 @@ function startBackgroundKeepalive(){
     _silentAudio.muted=false;
   }
   _silentAudio.play().catch(()=>{});
-  // 2. Iniciar oscilador Web Audio (Android/PWA necesita audio real para no suspender la app)
+  // 2. Oscilador Web Audio + MediaStream -> audio element (Android detecta audio real)
+  //    Necesario para que el SO no suspenda la PWA al salir.
   if(!_bgAudioCtx && !/iPad|iPhone|iPod/i.test(navigator.userAgent)){
     try{
       const AC=window.AudioContext||window.webkitAudioContext;
       _bgAudioCtx=new AC();
       _bgOsc=_bgAudioCtx.createOscillator();
-      _bgOsc.frequency.value=55; // 55Hz, casi inaudible
-      _bgOsc.type='sine';
+      _bgOsc.frequency.value=220; // 220Hz más detectable que 55Hz
+      _bgOsc.type='triangle';     // forma de onda con armónicos
       const g=_bgAudioCtx.createGain();
-      g.gain.value=0.001; // volumen mínimo
+      g.gain.value=0.01; // volumen muy bajo pero detectable
       _bgOsc.connect(g);
-      g.connect(_bgAudioCtx.destination);
-      _bgOsc.start();
-    }catch(e){}
-  }
-  // 3. Watchdog: si WebSpeech se pausa, reanudar. También mantiene el audio vivo.
-  if(_bgKeepaliveTimer) clearInterval(_bgKeepaliveTimer);
-  _bgKeepaliveTimer=setInterval(()=>{
-    if(!window.speechSynthesis) return;
-    if(window.speechSynthesis.paused) window.speechSynthesis.resume();
-    if(_silentAudio && _silentAudio.paused) _silentAudio.play().catch(()=>{});
-    // Re-crear oscilador si se detuvo (puede pasar en segundo plano)
-    if(!_bgAudioCtx && !/iPad|iPhone|iPod/i.test(navigator.userAgent)){
-      try{
-        const AC=window.AudioContext||window.webkitAudioContext;
-        _bgAudioCtx=new AC();
-        _bgOsc=_bgAudioCtx.createOscillator();
-        _bgOsc.frequency.value=55;
-        _bgOsc.type='sine';
-        const g=_bgAudioCtx.createGain();
-        g.gain.value=0.001;
-        _bgOsc.connect(g);
+      // Conectar a MediaStream para pasarlo a un <audio> element
+      if(_bgAudioCtx.createMediaStreamDestination){
+        const dest=_bgAudioCtx.createMediaStreamDestination();
+        g.connect(dest);
+        _bgOsc.start();
+        // Audio element con el stream — el SO lo reconoce como audio real
+        const streamAudio=new Audio();
+        streamAudio.srcObject=dest.stream;
+        streamAudio.loop=true;
+        streamAudio.volume=0;
+        streamAudio.setAttribute('playsinline','');
+        streamAudio.play().catch(()=>{});
+        _bgStreamAudio=streamAudio;
+      } else {
+        // Fallback: solo oscilador
         g.connect(_bgAudioCtx.destination);
         _bgOsc.start();
-      }catch(e){}
+      }
+    }catch(e){}
+  }
+  // 3. Watchdog: mantener speech + audio vivos
+  if(_bgKeepaliveTimer) clearInterval(_bgKeepaliveTimer);
+  _bgKeepaliveTimer=setInterval(()=>{
+    // WebSpeech
+    if(window.speechSynthesis){
+      if(window.speechSynthesis.paused) window.speechSynthesis.resume();
+      // Si no está speaking (fue cancelado en background), reanudar desde posición
+      if(!window.speechSynthesis.speaking && !window.speechSynthesis.paused
+         && isCurrentlyReading && !_wsPaused && !_wsKeepaliveActive){
+        stopReading();
+        readCurrentChapter();
+      }
+    }
+    // Audio silencioso
+    if(_silentAudio && _silentAudio.paused) _silentAudio.play().catch(()=>{});
+    // AudioContext: si está suspendido, reanudarlo
+    if(_bgAudioCtx && _bgAudioCtx.state==='suspended'){
+      try{_bgAudioCtx.resume();}catch(e){}
     }
   },3000);
 }
@@ -2871,7 +2887,8 @@ function stopBackgroundKeepalive(){
   releaseWakeLock();
   if(_silentAudio){_silentAudio.pause();_silentAudio.currentTime=0;}
   if(_bgKeepaliveTimer){clearInterval(_bgKeepaliveTimer);_bgKeepaliveTimer=null;}
-  // Parar oscilador de background
+  // Parar oscilador y stream audio
+  if(_bgStreamAudio){_bgStreamAudio.pause();_bgStreamAudio=null;}
   try{if(_bgOsc){_bgOsc.stop();_bgOsc.disconnect();_bgOsc=null;}
       if(_bgAudioCtx){_bgAudioCtx.close();_bgAudioCtx=null;}
   }catch(e){}
@@ -2879,26 +2896,43 @@ function stopBackgroundKeepalive(){
 
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden){
-    // Re-crear oscilador si se perdió al salir (a veces Chrome lo desconecta)
+    // Re-crear oscilador+stream si se perdió al salir
     if(currentProvider==='webspeech' && isCurrentlyReading && !_bgAudioCtx
        && !/iPad|iPhone|iPod/i.test(navigator.userAgent)){
       try{
         const AC=window.AudioContext||window.webkitAudioContext;
         _bgAudioCtx=new AC();
         _bgOsc=_bgAudioCtx.createOscillator();
-        _bgOsc.frequency.value=55;
-        _bgOsc.type='sine';
+        _bgOsc.frequency.value=220;
+        _bgOsc.type='triangle';
         const g=_bgAudioCtx.createGain();
-        g.gain.value=0.001;
+        g.gain.value=0.01;
         _bgOsc.connect(g);
-        g.connect(_bgAudioCtx.destination);
-        _bgOsc.start();
+        if(_bgAudioCtx.createMediaStreamDestination){
+          const dest=_bgAudioCtx.createMediaStreamDestination();
+          g.connect(dest);
+          _bgOsc.start();
+          const sa=new Audio();
+          sa.srcObject=dest.stream;
+          sa.loop=true;
+          sa.volume=0;
+          sa.setAttribute('playsinline','');
+          sa.play().catch(()=>{});
+          _bgStreamAudio=sa;
+        } else {
+          g.connect(_bgAudioCtx.destination);
+          _bgOsc.start();
+        }
       }catch(e){}
     }
   } else {
     // Al volver a la app
     if(window.speechSynthesis?.paused) window.speechSynthesis.resume();
     if(_silentAudio && _silentAudio.paused) _silentAudio.play().catch(()=>{});
+    // Reanudar AudioContext si está suspendido
+    if(_bgAudioCtx && _bgAudioCtx.state==='suspended'){
+      try{_bgAudioCtx.resume();}catch(e){}
+    }
   }
 });
 
