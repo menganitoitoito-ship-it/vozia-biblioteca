@@ -338,8 +338,8 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 .reader-para{cursor:pointer;transition:background 0.2s,color 0.2s;border-radius:4px;padding:2px 6px;color:var(--t1)}
 .reader-para:hover{background:rgba(255,255,255,0.04)}
 .reader-text .speaking{background:rgba(212,168,67,0.2) !important;color:var(--t1) !important}
-.reader-text .speaking-word{background:rgba(212,168,67,0.6);border-radius:3px;padding:0 2px}
-.reader-text mark.speaking-word{background:rgba(212,168,67,0.6);border-radius:3px;padding:0 2px;color:inherit;}
+.reader-text .speaking-word{background:#d4a843;color:#000;border-radius:4px;padding:2px 4px;font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,0.3);border-bottom:2px solid #b8922e}
+.reader-text mark.speaking-word{background:#d4a843;color:#000;border-radius:4px;padding:2px 4px;font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,0.3);border-bottom:2px solid #b8922e}
 /* ── READER CONTROLS ── */
 .reader-controls{padding:14px 20px;border-top:1px solid var(--b1);background:var(--s1);display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0;padding-bottom:calc(14px + var(--sab))}
 .rc-group{display:flex;align-items:center;gap:6px}
@@ -2499,6 +2499,21 @@ function startWSWidgetSync(){
     const mp = document.getElementById('mini-player');
     if(!mp||!mp.classList.contains('visible')) return;
     btn.textContent = isCurrentlyReading ? '⏸' : '▶';
+    // Sincronizar posición con MediaSession (necesario en Android para que aparezca el widget)
+    if('mediaSession' in navigator && isCurrentlyReading){
+      try{
+        const rate=parseFloat(document.getElementById('read-speed')?.value||'1');
+        const cps=13*rate;
+        const paras=document.querySelectorAll('.reader-para');
+        let totalChars=0;
+        for(const p of paras) totalChars+=(p.textContent||'').length;
+        const duration=totalChars/cps;
+        const position=Math.min(currentCharOffset/cps, duration);
+        if(duration>0&&!isNaN(duration)){
+          navigator.mediaSession.setPositionState({duration,playbackRate:rate,position});
+        }
+      }catch(e){}
+    }
   }, 500);
 }
 
@@ -2678,8 +2693,12 @@ function updateMediaSession(){
     artwork
   });
 
-  // Playback state
-  navigator.mediaSession.playbackState = miniPlayerAudio.paused ? 'paused' : 'playing';
+  // For WebSpeech: set playback state based on wsControl, not silentAudio
+  if(currentProvider==='webspeech'){
+    navigator.mediaSession.playbackState = (_wsPaused||!isCurrentlyReading) ? 'paused' : 'playing';
+  } else {
+    navigator.mediaSession.playbackState = miniPlayerAudio.paused ? 'paused' : 'playing';
+  }
 
   // Action handlers
   navigator.mediaSession.setActionHandler('play', ()=>{
@@ -2705,7 +2724,23 @@ function updateMediaSession(){
 
   // Position state (enables seek bar on lock screen)
   try{
-    if(currentProvider !== 'webspeech' && miniPlayerAudio.duration && !isNaN(miniPlayerAudio.duration)){
+    if(currentProvider==='webspeech'){
+      // Estimar duración desde caracteres totales del capítulo
+      const rate=parseFloat(document.getElementById('read-speed')?.value||'1');
+      const cps=13*rate; // chars per second
+      const paras=document.querySelectorAll('.reader-para');
+      let totalChars=0;
+      for(const p of paras) totalChars+=(p.textContent||'').length;
+      const duration=totalChars/cps;
+      const position=Math.min(currentCharOffset/cps, duration);
+      if(duration>0&&!isNaN(duration)){
+        navigator.mediaSession.setPositionState({
+          duration,
+          playbackRate:rate,
+          position
+        });
+      }
+    } else if(miniPlayerAudio.duration && !isNaN(miniPlayerAudio.duration)){
       navigator.mediaSession.setPositionState({
         duration: miniPlayerAudio.duration,
         playbackRate: miniPlayerAudio.playbackRate||1,
@@ -2718,8 +2753,22 @@ function updateMediaSession(){
   if(!miniPlayerAudio._msSync){
     miniPlayerAudio._msSync=true;
     miniPlayerAudio.addEventListener('timeupdate',()=>{
-      if(currentProvider === 'webspeech') return;
-      if(!('mediaSession' in navigator)||!miniPlayerAudio.duration||isNaN(miniPlayerAudio.duration)) return;
+      if(!('mediaSession' in navigator)) return;
+      if(currentProvider==='webspeech'){
+        // WebSpeech: actualizar desde currentCharOffset cada vez
+        try{
+          const rate=parseFloat(document.getElementById('read-speed')?.value||'1');
+          const cps=13*rate;
+          const paras=document.querySelectorAll('.reader-para');
+          let totalChars=0;
+          for(const p of paras) totalChars+=(p.textContent||'').length;
+          const duration=totalChars/cps;
+          const position=Math.min(currentCharOffset/cps, duration);
+          navigator.mediaSession.setPositionState({duration,playbackRate:rate,position});
+        }catch(e){}
+        return;
+      }
+      if(!miniPlayerAudio.duration||isNaN(miniPlayerAudio.duration)) return;
       try{
         navigator.mediaSession.setPositionState({
           duration:miniPlayerAudio.duration,
@@ -2729,10 +2778,10 @@ function updateMediaSession(){
       }catch(e){}
     });
     miniPlayerAudio.addEventListener('play', ()=>{
-      if('mediaSession' in navigator) navigator.mediaSession.playbackState='playing';
+      if('mediaSession' in navigator && currentProvider!=='webspeech') navigator.mediaSession.playbackState='playing';
     });
     miniPlayerAudio.addEventListener('pause', ()=>{
-      if('mediaSession' in navigator) navigator.mediaSession.playbackState='paused';
+      if('mediaSession' in navigator && currentProvider!=='webspeech') navigator.mediaSession.playbackState='paused';
     });
   }
 }
