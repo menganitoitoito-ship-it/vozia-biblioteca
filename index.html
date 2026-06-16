@@ -606,7 +606,7 @@ input[type=range]{accent-color:var(--gold);cursor:pointer;width:100%}
   #btn-add{padding:4px 7px!important}
   .book-count{display:none}
   .topbar-right{gap:4px}
-  .reader-text{padding:20px 16px;font-size:17px;line-height:1.9}
+  .reader-text{padding:20px 16px 90px;font-size:17px;line-height:1.9}
   .reader-controls{
     gap:6px;padding:10px 12px;
     flex-wrap:wrap;
@@ -2792,6 +2792,8 @@ function updateMediaSession(){
 // ═══════════════════════════════════════════
 let _silentAudio=null;
 let _bgKeepaliveTimer=null;
+let _bgAudioCtx=null;
+let _bgOsc=null;
 
 // ── WAKE LOCK — mantiene la pantalla activa mientras lee ──
 let _wakeLock=null;
@@ -2825,12 +2827,42 @@ function startBackgroundKeepalive(){
     _silentAudio.muted=false;
   }
   _silentAudio.play().catch(()=>{});
-  // 2. Watchdog: si WebSpeech se pausa, reanudar. También mantiene el audio silencioso vivo.
+  // 2. Iniciar oscilador Web Audio (Android/PWA necesita audio real para no suspender la app)
+  if(!_bgAudioCtx && !/iPad|iPhone|iPod/i.test(navigator.userAgent)){
+    try{
+      const AC=window.AudioContext||window.webkitAudioContext;
+      _bgAudioCtx=new AC();
+      _bgOsc=_bgAudioCtx.createOscillator();
+      _bgOsc.frequency.value=55; // 55Hz, casi inaudible
+      _bgOsc.type='sine';
+      const g=_bgAudioCtx.createGain();
+      g.gain.value=0.001; // volumen mínimo
+      _bgOsc.connect(g);
+      g.connect(_bgAudioCtx.destination);
+      _bgOsc.start();
+    }catch(e){}
+  }
+  // 3. Watchdog: si WebSpeech se pausa, reanudar. También mantiene el audio vivo.
   if(_bgKeepaliveTimer) clearInterval(_bgKeepaliveTimer);
   _bgKeepaliveTimer=setInterval(()=>{
     if(!window.speechSynthesis) return;
     if(window.speechSynthesis.paused) window.speechSynthesis.resume();
     if(_silentAudio && _silentAudio.paused) _silentAudio.play().catch(()=>{});
+    // Re-crear oscilador si se detuvo (puede pasar en segundo plano)
+    if(!_bgAudioCtx && !/iPad|iPhone|iPod/i.test(navigator.userAgent)){
+      try{
+        const AC=window.AudioContext||window.webkitAudioContext;
+        _bgAudioCtx=new AC();
+        _bgOsc=_bgAudioCtx.createOscillator();
+        _bgOsc.frequency.value=55;
+        _bgOsc.type='sine';
+        const g=_bgAudioCtx.createGain();
+        g.gain.value=0.001;
+        _bgOsc.connect(g);
+        g.connect(_bgAudioCtx.destination);
+        _bgOsc.start();
+      }catch(e){}
+    }
   },3000);
 }
 
@@ -2839,12 +2871,35 @@ function stopBackgroundKeepalive(){
   releaseWakeLock();
   if(_silentAudio){_silentAudio.pause();_silentAudio.currentTime=0;}
   if(_bgKeepaliveTimer){clearInterval(_bgKeepaliveTimer);_bgKeepaliveTimer=null;}
+  // Parar oscilador de background
+  try{if(_bgOsc){_bgOsc.stop();_bgOsc.disconnect();_bgOsc=null;}
+      if(_bgAudioCtx){_bgAudioCtx.close();_bgAudioCtx=null;}
+  }catch(e){}
 }
 
-// Resume WebSpeech al volver a primer plano
 document.addEventListener('visibilitychange',()=>{
-  if(document.hidden) return;
-  if(window.speechSynthesis?.paused) window.speechSynthesis.resume();
+  if(document.hidden){
+    // Re-crear oscilador si se perdió al salir (a veces Chrome lo desconecta)
+    if(currentProvider==='webspeech' && isCurrentlyReading && !_bgAudioCtx
+       && !/iPad|iPhone|iPod/i.test(navigator.userAgent)){
+      try{
+        const AC=window.AudioContext||window.webkitAudioContext;
+        _bgAudioCtx=new AC();
+        _bgOsc=_bgAudioCtx.createOscillator();
+        _bgOsc.frequency.value=55;
+        _bgOsc.type='sine';
+        const g=_bgAudioCtx.createGain();
+        g.gain.value=0.001;
+        _bgOsc.connect(g);
+        g.connect(_bgAudioCtx.destination);
+        _bgOsc.start();
+      }catch(e){}
+    }
+  } else {
+    // Al volver a la app
+    if(window.speechSynthesis?.paused) window.speechSynthesis.resume();
+    if(_silentAudio && _silentAudio.paused) _silentAudio.play().catch(()=>{});
+  }
 });
 
 // ── PERSISTENCIA DE POSICIÓN DE SCROLL POR CAPÍTULO ──
@@ -3120,7 +3175,7 @@ async function readChapterByParagraphs(voiceId, session){
           highlightWordInPara(pd,estCapped);
         }
       };
-      timerId=setInterval(tick,50);
+      timerId=setInterval(tick,30);
 
       // Word highlighting via boundary events
       utt.onboundary=(e)=>{
@@ -3145,6 +3200,11 @@ async function readChapterByParagraphs(voiceId, session){
         if(timerId) clearInterval(timerId);
         if(sessionId!==mySession||e.error==='interrupted'||e.error==='canceled') return;
         done();
+      };
+
+      // Calibrar timer cuando el audio realmente empieza (Chrome tiene delay variable)
+      utt.onstart=()=>{
+        chunkStartTime=Date.now();
       };
 
       synth.speak(utt);
