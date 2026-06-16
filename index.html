@@ -2360,17 +2360,11 @@ async function readCurrentChapter(){
     startBackgroundKeepalive();
 
     if(isWebSpeech){
-      // Asegurar voces cargadas antes de empezar (intenta varias veces en móvil)
-      if(window.speechSynthesis.getVoices().length===0){
-        await new Promise(res=>{window.speechSynthesis.onvoiceschanged=res;setTimeout(res,2000);});
-      }
-      // Si aún no hay voces, reintentar con force refresh
-      if(window.speechSynthesis.getVoices().length===0){
-        window.speechSynthesis.getVoices();
-        await new Promise(res=>setTimeout(res,500));
-      }
-
       // Leer capítulos en bucle, párrafo a párrafo
+      // IMPORTANTE: readChapterByParagraphs se llama ANTES de cualquier await
+      // para preservar el contexto de gesto de usuario en Chrome móvil.
+      // En Android Chrome, synth.speak() necesita contexto de gesto de usuario,
+      // y ese contexto se pierde tras await.
       while(isCurrentlyReading && currentChapter < epubChapters.length){
         const ch=epubChapters[currentChapter];
         showMiniPlayerWS(ch.title);
@@ -2383,8 +2377,17 @@ async function readCurrentChapter(){
         const savedChar = localStorage.getItem('atk_charoff_' + currentEpubKey + '_' + currentChapter + '_' + currentParaIndex);
         currentCharOffset = savedChar !== null ? parseInt(savedChar) : 0;
 
+        // Start reading IMMEDIATELY (synchronous), before any await,
+        // so synth.speak() runs within user gesture context on mobile Chrome
         const session=currentReadSession;
-        await readChapterByParagraphs(voiceId, session);
+        const readPromise = readChapterByParagraphs(voiceId, session);
+
+        // Load voices in parallel (not critical for reading to start)
+        if(window.speechSynthesis.getVoices().length===0){
+          await new Promise(res=>{window.speechSynthesis.onvoiceschanged=res;setTimeout(res,2000);});
+        }
+
+        await readPromise;
 
         if(!isCurrentlyReading||session!==currentReadSession) break;
 
@@ -2455,6 +2458,7 @@ function stopReading(){
   activeUtterance = null;
   _wsControl = null;
   _wsPaused = false;
+  _wsKeepaliveActive = false;
   clearInterval(_wsWidgetSync);
   const audio=audioElements['reader'];
   if(audio) audio.pause();
@@ -2485,6 +2489,7 @@ function stopReading(){
 let _wsWidgetSync = null;
 let _wsControl = null;
 let _wsPaused = false;
+let _wsKeepaliveActive = false;
 function startWSWidgetSync(){
   clearInterval(_wsWidgetSync);
   _wsWidgetSync = setInterval(()=>{
@@ -2937,6 +2942,12 @@ async function readChapterByParagraphs(voiceId, session){
     for(const pd of paraData) restorePara(pd);
   };
 
+  // Cancelar keepalive del capítulo anterior (Android)
+  if(_wsKeepaliveActive){
+    _wsKeepaliveActive=false;
+    if(window.speechSynthesis) window.speechSynthesis.cancel();
+  }
+
   await new Promise((resolve)=>{
     let finished=false;
     let mySession=0; // internal chunk session
@@ -2950,7 +2961,23 @@ async function readChapterByParagraphs(voiceId, session){
 
     const done=()=>{
       if(timerId){clearInterval(timerId);timerId=null;}
-      if(!finished){finished=true;_wsControl=null;cleanupAll();resolve();}
+      if(!finished){
+        finished=true;_wsControl=null;cleanupAll();
+        // Mantener síntesis activa para el siguiente capítulo (Android Chrome)
+        // Sin esto, el contexto de gesto se pierde y el siguiente synth.speak() falla
+        if(/Android/i.test(navigator.userAgent)){
+          _wsKeepaliveActive=true;
+          const ka=()=>{
+            if(!_wsKeepaliveActive) return;
+            const u=new SpeechSynthesisUtterance(' ');
+            u.volume=0;u.rate=10;u.lang='es-ES';
+            u.onend=ka;
+            window.speechSynthesis.speak(u);
+          };
+          ka();
+        }
+        resolve();
+      }
     };
 
     const speakChunksOfPara=(pi, chunkIdx, sessionId)=>{
@@ -3095,6 +3122,11 @@ async function readChapterByParagraphs(voiceId, session){
       resume:()=>{
         if(finished||!isCurrentlyReading) return;
         _wsPaused=false;
+        // Cancelar keepalive entre capítulos antes de reanudar
+        if(_wsKeepaliveActive){
+          _wsKeepaliveActive=false;
+          if(window.speechSynthesis) window.speechSynthesis.cancel();
+        }
         const resumeSession=++mySession;
         if(_silentAudio) _silentAudio.play().catch(()=>{});
         
@@ -3102,11 +3134,19 @@ async function readChapterByParagraphs(voiceId, session){
         startingCharOffset=currentCharOffset;
         isFirstParagraph=true; 
 
-        setTimeout(()=>{
+        // Android: sin setTimeout para preservar contexto de gesto de usuario
+        // Desktop: pequeño delay para evitar race con synth.cancel()
+        if(/Android/i.test(navigator.userAgent)){
           if(mySession===resumeSession&&!finished&&!_wsPaused){
             speakChunksOfPara(piCurrent, 0, resumeSession);
           }
-        },100);
+        } else {
+          setTimeout(()=>{
+            if(mySession===resumeSession&&!finished&&!_wsPaused){
+              speakChunksOfPara(piCurrent, 0, resumeSession);
+            }
+          },100);
+        }
         document.getElementById('mp-play-btn').textContent='⏸';
         const rb=document.getElementById('read-btn');if(rb) rb.textContent='⏸ Leyendo…';
         updateMediaSession();
