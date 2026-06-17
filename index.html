@@ -342,7 +342,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 .reader-text .speaking{background:rgba(212,168,67,0.2) !important;color:var(--t1) !important}
 .reader-text .speaking-word{background:#d4a843;color:#000;border-radius:4px;padding:2px 4px;font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,0.3);border-bottom:2px solid #b8922e}
 .reader-text mark.speaking-word{background:#d4a843;color:#000;border-radius:4px;padding:2px 4px;font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,0.3);border-bottom:2px solid #b8922e}
-.reader-text .ws-phrase.speaking{background:rgba(212,168,67,0.25);border-radius:6px;padding:2px 3px;transition:background .15s}
+.reader-text .ws-phrase.speaking{background:rgba(212,168,67,0.35) !important;border-radius:6px;padding:2px 3px;transition:background .15s;color:inherit !important}
 /* ── READER CONTROLS ── */
 .reader-controls{padding:14px 20px;border-top:1px solid var(--b1);background:var(--s1);display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0;padding-bottom:calc(14px + var(--sab))}
 .rc-group{display:flex;align-items:center;gap:6px}
@@ -587,13 +587,18 @@ input[type=range]{accent-color:var(--gold);cursor:pointer;width:100%}
     position:fixed;left:0;
     top:0;bottom:0;
     transform:translateX(-100%);
-    z-index:25;
+    z-index:9999;
     padding-top:env(safe-area-inset-top);
+    height:100dvh;
   }
-  #sidebar.open{transform:translateX(0);pointer-events:auto}
+  #sidebar.open{transform:translateX(0)}
+  #sidebar .sidebar-scroll{min-height:0}
   #sidebar .sidebar-scroll,
   #sidebar .sidebar-bottom,
-  #sidebar .sidebar-brand{pointer-events:auto;touch-action:manipulation}
+  #sidebar .sidebar-brand,
+  #sidebar .nav-item,
+  #sidebar button{cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:rgba(212,168,67,.3)}
+  .sidebar-overlay{z-index:9998}
   /* Hamburguesa: más grande y visible */
   .menu-toggle{
     display:flex;
@@ -3567,7 +3572,8 @@ function playNextGoogleChunk(voiceId, speed, lang, chapterTitle){
     _googleChunkIdx++;
     playNextGoogleChunk(voiceId, speed, lang, chapterTitle);
   };
-  _googleAudio.onerror=()=>{
+  _googleAudio.onerror=(e)=>{
+    if(_googleChunkIdx===0) toast('⚠️ Google TTS: error al cargar audio. Puede que Google haya bloqueado la conexión.');
     _googleChunkIdx++;
     playNextGoogleChunk(voiceId, speed, lang, chapterTitle);
   };
