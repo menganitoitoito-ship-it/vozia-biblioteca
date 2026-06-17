@@ -331,6 +331,8 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 .ch-nav-arrow:hover{opacity:1!important;background:var(--s3)}
 .reader-text::-webkit-scrollbar{width:4px}
 .reader-text::-webkit-scrollbar-thumb{background:var(--s4);border-radius:2px}
+.reader-toc-btn{display:none;position:absolute;top:8px;left:8px;z-index:10;width:32px;height:32px;border-radius:8px;border:1px solid var(--b2);background:var(--s2);color:var(--t2);cursor:pointer;align-items:center;justify-content:center;font-size:16px;transition:all .15s}
+.reader-toc-btn:hover{background:var(--s3);color:var(--t1)}
 .reader-text h1,.reader-text h2,.reader-text h3{font-family:var(--serif);margin:1.5em 0 .6em;color:var(--t1);font-weight:600}
 .reader-text h1{font-size:28px}
 .reader-text h2{font-size:22px}
@@ -340,6 +342,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 .reader-text .speaking{background:rgba(212,168,67,0.2) !important;color:var(--t1) !important}
 .reader-text .speaking-word{background:#d4a843;color:#000;border-radius:4px;padding:2px 4px;font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,0.3);border-bottom:2px solid #b8922e}
 .reader-text mark.speaking-word{background:#d4a843;color:#000;border-radius:4px;padding:2px 4px;font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,0.3);border-bottom:2px solid #b8922e}
+.reader-text .ws-phrase.speaking{background:rgba(212,168,67,0.25);border-radius:6px;padding:2px 3px;transition:background .15s}
 /* ── READER CONTROLS ── */
 .reader-controls{padding:14px 20px;border-top:1px solid var(--b1);background:var(--s1);display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0;padding-bottom:calc(14px + var(--sab))}
 .rc-group{display:flex;align-items:center;gap:6px}
@@ -600,6 +603,11 @@ input[type=range]{accent-color:var(--gold);cursor:pointer;width:100%}
   }
   .topbar-title{display:none}
   .reader-sidebar{display:none}
+  .reader-toc-btn{display:flex!important;z-index:15}
+  .reader-sidebar.open{display:flex!important;position:fixed;top:0;left:0;width:280px;height:100dvh;z-index:950;background:var(--s1);border-right:1px solid var(--b2);box-shadow:4px 0 30px rgba(0,0,0,.5);animation:slide-left .25s ease;overflow:hidden}
+  .reader-sidebar.open .reader-toc{overflow-y:auto;flex:1}
+  .reader-sidebar.open::after{content:'';position:fixed;top:0;left:280px;width:100vw;height:100dvh;background:rgba(0,0,0,.5);z-index:-1;pointer-events:auto}
+  @keyframes slide-left{from{transform:translateX(-100%)}to{transform:translateX(0)}}
   /* Topbar: ocultar etiquetas de texto en móvil para que no se corte */
   .topbar-btn-label{display:none}
   #btn-export{margin-right:4px!important;padding:4px 7px!important}
@@ -809,6 +817,7 @@ input[type=range]{accent-color:var(--gold);cursor:pointer;width:100%}
       <div class="reader-content">
         <button class="ch-nav-arrow ch-nav-prev" id="ch-nav-prev" onclick="prevChapter()" title="Capítulo anterior">&#8249;</button>
         <button class="ch-nav-arrow ch-nav-next" id="ch-nav-next" onclick="nextChapter()" title="Capítulo siguiente">&#8250;</button>
+        <div class="reader-toc-btn" id="reader-toc-btn" onclick="toggleReaderTOC()" title="Índice">☰</div>
         <div class="reader-text" id="reader-text">
           <div class="empty-state">
             <div style="font-size:48px">📖</div>
@@ -1147,6 +1156,12 @@ const PROVIDERS = {
     info:'<b>100% gratis, sin registro.</b> Usa las voces del navegador. Funciona bien en Chrome/Edge/Safari con voces en español instaladas.',
     keyPlaceholder:'(no necesita API key)',keyLink:'✅ Sin registro — funciona ya',keyLinkUrl:'#',
     noKeyRequired:true,voicesSource:'webspeech',
+    models:[{id:'1',name:'Normal'},{id:'1.25',name:'Rápido'},{id:'1.5',name:'Muy rápido'},{id:'0.75',name:'Lento'}]},
+  googletranslate:{name:'Google Traductor',emoji:'🔊',color:'#4fc3f7',free:'Ilimitado · Gratis',
+    info:'<b>Gratis e ilimitado.</b> Usa el motor del Traductor de Google. No requiere API key.<br>⚠️ Requiere internet. Fragmenta el texto automáticamente para superar el límite de caracteres.',
+    keyPlaceholder:'(no necesita API key)',keyLink:'✅ Sin registro — funciona ya',keyLinkUrl:'#',
+    noKeyRequired:true,voicesSource:'static',
+    staticVoices:[{voice_id:'es',name:'Google Español',labels:{gender:'female',lang:'es',accent:'español'}}],
     models:[{id:'1',name:'Normal'},{id:'1.25',name:'Rápido'},{id:'1.5',name:'Muy rápido'},{id:'0.75',name:'Lento'}]},
   elevenlabs:{name:'ElevenLabs',emoji:'🎙️',color:'#c084fc',free:'10.000 chars/mes gratis',
     info:'10.000 chars/mes gratis. Clonación de voz, modelos premium. <a href="https://elevenlabs.io" target="_blank" style="color:var(--gold)">elevenlabs.io</a> → Profile → API Keys.',
@@ -2176,7 +2191,7 @@ function finishLoad(){
   _showChapterSilent(targetCh);
   // Mark book as reading if found in library
   const book=books.find(b=>b.epubKey===currentEpubKey);
-  if(book&&book.status==='unread'){
+  if(book&&book.status!=='read'){
     book.status='reading';
     saveBooks();
     renderBooks();
@@ -2199,6 +2214,8 @@ function _showChapterSilent(idx){
     return `<p class="reader-para" data-index="${paraIdx++}" onclick="jumpToParagraph(${paraIdx-1})">${escHtml(t)}</p>`;
   }).join('');
   currentTotalParas = paraIdx;
+  stopPhraseSync();
+  wrapPhrasesInReader();
 
   const savedPara = localStorage.getItem('atk_para_' + currentEpubKey + '_' + currentChapter);
   currentParaIndex = savedPara !== null ? parseInt(savedPara) : 0;
@@ -2239,6 +2256,8 @@ function showChapter(idx){
     return `<p class="reader-para" data-index="${paraIdx++}" onclick="jumpToParagraph(${paraIdx-1})">${escHtml(t)}</p>`;
   }).join('');
   currentTotalParas = paraIdx;
+  stopPhraseSync();
+  wrapPhrasesInReader();
 
   const savedPara = localStorage.getItem('atk_para_' + currentEpubKey + '_' + currentChapter);
   currentParaIndex = savedPara !== null ? parseInt(savedPara) : 0;
@@ -2260,6 +2279,22 @@ function showChapter(idx){
 
 function prevChapter(){ if(currentChapter>0) showChapter(currentChapter-1); }
 function nextChapter(){ if(currentChapter<epubChapters.length-1) showChapter(currentChapter+1); }
+
+function toggleReaderTOC(){
+  const sb=document.querySelector('.reader-sidebar');
+  if(!sb) return;
+  sb.classList.toggle('open');
+  if(sb.classList.contains('open')){
+    // Cerrar al hacer clic fuera
+    const closer=(e)=>{
+      if(!sb.contains(e.target) && !e.target.closest('#reader-toc-btn')){
+        sb.classList.remove('open');
+        document.removeEventListener('click',closer);
+      }
+    };
+    setTimeout(()=>document.addEventListener('click',closer),10);
+  }
+}
 
 // ═══════════════════════════════════════════
 //  TTS / READING
@@ -2328,8 +2363,29 @@ function updateReaderAudioSettings() {
 async function readCurrentChapter(){
   const isWebSpeech=currentProvider==='webspeech';
 
+  if(isWebSpeech && isCurrentlyReading){
+    if(_wsControl){
+      if(_wsPaused) _wsControl.resume();
+      else _wsControl.pause();
+    }
+    return;
+  }
+  if(!isWebSpeech&&!apiKeys[currentProvider]&&!PROVIDERS[currentProvider]?.noKeyRequired){openApiModal();return;}
+  if(!epubChapters.length){toast('⚠️ Abre un libro primero');return;}
+  const voiceId=document.getElementById('reader-voice').value;
+  if(!voiceId&&currentProvider!=='webspeech'&&currentProvider!=='googletranslate'){toast('⚠️ Selecciona una voz');return;}
+
+  const btn=document.getElementById('read-btn');
+  const stopBtn=document.getElementById('stop-btn');
+  btn.disabled=true;btn.innerHTML='⏳ Leyendo…';
+  stopBtn.style.display='flex';
+  isCurrentlyReading=true;
+
+  // Iniciar keepalive ANTES del dummy speak para que _silentAudio.play()
+  // reciba el gesto de usuario antes de que speechSynthesis lo consuma
+  try{startBackgroundKeepalive();}catch(e){}
+
   // Workaround para Chrome móvil: adquirir speech synthesis con el gesto del usuario
-  // antes de cualquier await, porque Chrome pierde el contexto de gesto tras await
   if(isWebSpeech && window.speechSynthesis){
     try{
       const dummy=new SpeechSynthesisUtterance(' ');
@@ -2338,28 +2394,9 @@ async function readCurrentChapter(){
     }catch(e){}
   }
 
-  if(isWebSpeech && isCurrentlyReading){
-    if(_wsControl){
-      if(_wsPaused) _wsControl.resume();
-      else _wsControl.pause();
-    }
-    return;
-  }
-  if(!isWebSpeech&&!apiKeys[currentProvider]){openApiModal();return;}
-  if(!epubChapters.length){toast('⚠️ Abre un libro primero');return;}
-  const voiceId=document.getElementById('reader-voice').value;
-  if(!voiceId&&currentProvider!=='webspeech'){toast('⚠️ Selecciona una voz');return;}
-
-  const btn=document.getElementById('read-btn');
-  const stopBtn=document.getElementById('stop-btn');
-  btn.disabled=true;btn.innerHTML='⏳ Leyendo…';
-  stopBtn.style.display='flex';
-  isCurrentlyReading=true;
-
   try{
-    startBackgroundKeepalive();
-
     if(isWebSpeech){
+
       // Leer capítulos en bucle, párrafo a párrafo
       // IMPORTANTE: readChapterByParagraphs se llama ANTES de cualquier await
       // para preservar el contexto de gesto de usuario en Chrome móvil.
@@ -2408,6 +2445,21 @@ async function readCurrentChapter(){
           break;
         }
       }
+    } else if(currentProvider==='googletranslate'){
+      // Google Translate TTS — chunked playback con <audio>
+      while(isCurrentlyReading && currentChapter < epubChapters.length){
+        const ch=epubChapters[currentChapter];
+        const parasInDom=document.querySelectorAll('.reader-para');
+        if(parasInDom.length>0) currentTotalParas=parasInDom.length;
+        saveParaPosition();
+        const cleanText=ch.content.replace(/\s+/g,' ').trim();
+        _googleChunks=splitTextChunks(cleanText,180);
+        _googleChunkIdx=0;
+        _googleAudio=null;
+        const speed=parseFloat(document.getElementById('read-speed').value)||1;
+        playNextGoogleChunk(voiceId, speed, voiceId||'es', ch.title);
+        return;
+      }
     } else {
       // API providers (ElevenLabs, OpenAI, etc.) — lectura por capítulo con audio
       const model=PROVIDERS[currentProvider]?.models?.[0]?.id||'';
@@ -2426,6 +2478,7 @@ async function readCurrentChapter(){
         const audio=audioElements['reader'];
         audio.playbackRate=parseFloat(document.getElementById('read-speed').value);
         audio.play();
+        startPhraseSync(audio, 1, 0);
         document.getElementById('reader-play').textContent='⏸';
         showMiniPlayer(audio,ch.title);
         audio.onended=()=>{
@@ -2460,10 +2513,13 @@ function stopReading(){
   _wsPaused = false;
   _wsKeepaliveActive = false;
   clearInterval(_wsWidgetSync);
+  if(_googleAudio){_googleAudio.onended=null;_googleAudio.onerror=null;_googleAudio.pause();_googleAudio=null;}
+  _googleChunks=[];_googleChunkIdx=0;
   const audio=audioElements['reader'];
   if(audio) audio.pause();
   if(window.speechSynthesis) window.speechSynthesis.cancel();
   stopBackgroundKeepalive();
+  stopPhraseSync();
 
   document.querySelectorAll('.reader-para').forEach(el => {
     el.classList.remove('speaking');
@@ -2817,19 +2873,21 @@ document.addEventListener('visibilitychange',()=>{
 function startBackgroundKeepalive(){
   window._wlRequested=true;
   requestWakeLock();
-  // 1. Generar un WAV real con tono apenas audible (el sistema necesita detectar audio)
+  // 1. Generar un WAV real con tono detectable por el sistema Android
+  //    Necesario para que aparezca la notificación multimedia y la app no se suspenda.
   if(!_silentAudio){
-    const wav=generateToneWAV(150, 0.5, 0.003);
+    const wav=generateToneWAV(200, 1.5, 0.15); // 200Hz, 1.5s, amplitud 0.15
     const url=URL.createObjectURL(wav);
     _silentAudio=new Audio(url);
     _silentAudio.loop=true;
-    _silentAudio.volume=0.01;
+    _silentAudio.volume=0.1;
     _silentAudio.setAttribute('playsinline','');
     _silentAudio.setAttribute('webkit-playsinline','');
     _silentAudio.muted=false;
   }
+  // Intentar play con el gesto de usuario activo
   _silentAudio.play().catch(()=>{});
-  // 2. Watchdog: mantener speech + audio vivos
+  // 2. Watchdog
   if(_bgKeepaliveTimer) clearInterval(_bgKeepaliveTimer);
   _bgKeepaliveTimer=setInterval(()=>{
     if(window.speechSynthesis){
@@ -2901,6 +2959,80 @@ function restoreScrollPosition(){
   const key='atk_scroll_'+currentEpubKey+'_'+currentChapter;
   const saved=localStorage.getItem(key);
   if(saved!==null) requestAnimationFrame(()=>{area.scrollTop=parseInt(saved)||0;});
+}
+
+// ─── Frases (resaltado frase por frase) ───────────────
+let _totalPhrases = 0;
+let _phraseTimer = null;
+
+function splitIntoPhrases(text){
+  if(!text) return[];
+  const result=[];
+  const re=/[^.!?]+[.!?](\s|$)/g;
+  let match,lastIdx=0;
+  while((match=re.exec(text))!==null){
+    const phrase=text.slice(lastIdx,match.index+match[0].length).replace(/\s+$/,'');
+    if(phrase) result.push(phrase);
+    lastIdx=match.index+match[0].length;
+  }
+  const rem=text.slice(lastIdx).trim();
+  if(rem) result.push(rem);
+  return result.length>0?result:[text.trim()];
+}
+
+function wrapPhrasesInReader(){
+  const paras=document.querySelectorAll('.reader-para');
+  let idx=0;
+  paras.forEach(p=>{
+    const phrases=splitIntoPhrases(p.textContent);
+    if(phrases.length<=1){idx++;return;}
+    p.innerHTML=phrases.map(ph=>{
+      const gi=idx++;
+      return `<span class="ws-phrase" data-phrase="${gi}">${escHtml(ph)}</span>`;
+    }).join('');
+  });
+  _totalPhrases=idx;
+}
+
+function highlightPhrase(globalIdx){
+  let active=null;
+  document.querySelectorAll('.ws-phrase').forEach(el=>{
+    const isActive=parseInt(el.dataset.phrase)===globalIdx;
+    el.classList.toggle('speaking',isActive);
+    if(isActive) active=el;
+  });
+  if(active){
+    const area=document.getElementById('reader-text');
+    if(area){
+      const activeTop=active.getBoundingClientRect().top-area.getBoundingClientRect().top;
+      const margin=window.innerHeight*0.35;
+      if(activeTop<margin||activeTop>window.innerHeight-margin){
+        active.scrollIntoView({block:'center',behavior:'smooth',inline:'nearest'});
+      }
+    }
+  }
+}
+
+function startPhraseSync(audio, totalChunks, currentChunk){
+  stopPhraseSync();
+  if(!audio||!_totalPhrases) return;
+  _phraseTimer=setInterval(()=>{
+    if(!audio.duration||!audio.currentTime) return;
+    let progress;
+    if(totalChunks>1){
+      progress=(currentChunk/totalChunks)+(audio.currentTime/audio.duration)*(1/totalChunks);
+    } else {
+      progress=audio.currentTime/audio.duration;
+    }
+    const idx=Math.min(Math.floor(progress*_totalPhrases),_totalPhrases-1);
+    highlightPhrase(idx);
+  },200);
+}
+
+function stopPhraseSync(){
+  clearInterval(_phraseTimer);
+  _phraseTimer=null;
+  document.querySelectorAll('.ws-phrase.speaking').forEach(el=>el.classList.remove('speaking'));
 }
 // Guardar scroll periódicamente mientras se lee
 let _scrollSaveTimer=null;
@@ -3258,6 +3390,13 @@ async function ttsRequest(text,voiceId,model){
     return null;
   }
 
+  if(currentProvider==='googletranslate'){
+    const lang=voiceId||'es';
+    const text180=text.replace(/\s+/g,' ').trim().substring(0,180);
+    if(!text180) throw new Error('Texto vacío');
+    return await googleTTSFetch(text180, lang, 1);
+  }
+
   const key=apiKeys[currentProvider];
   if(!key||key==='nokey') throw new Error('Sin API key. Configúrala en Conectar API.');
 
@@ -3353,6 +3492,99 @@ async function ttsRequest(text,voiceId,model){
   throw new Error('Proveedor no reconocido: '+currentProvider);
 }
 
+// ─── Google Translate TTS ──────────────────────────────
+let _googleChunks = [];
+let _googleChunkIdx = 0;
+let _googleAudio = null;
+
+function splitTextChunks(text, maxLen){
+  const chunks=[];
+  let i=0;
+  while(i<text.length){
+    if(i+maxLen>=text.length){chunks.push(text.slice(i));break;}
+    const end=i+maxLen;
+    const slice=text.slice(i,end);
+    const breaks=[
+      slice.lastIndexOf('. '),
+      slice.lastIndexOf('! '),
+      slice.lastIndexOf('? '),
+      slice.lastIndexOf('.\n'),
+      slice.lastIndexOf('\n'),
+      slice.lastIndexOf('; '),
+      slice.lastIndexOf(', '),
+      slice.lastIndexOf(' ')
+    ].filter(b=>b>=0);
+    let bp=breaks.reduce((a,b)=>Math.max(a,b),-1);
+    if(bp<maxLen*0.3) bp=end-i-1; // hard break if no good break point found
+    else bp+=1; // include the delimiter
+    if(bp<=0) bp=Math.min(maxLen,text.length-i);
+    chunks.push(text.slice(i,i+bp));
+    i+=bp;
+  }
+  return chunks;
+}
+
+async function googleTTSFetch(text, lang, speed){
+  const url='https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl='+lang+'&ttsspeed='+speed+'&q='+encodeURIComponent(text);
+  const r=await fetch(url);
+  if(!r.ok){
+    if(r.status===429) throw new Error('Google TTS: demasiadas solicitudes. Espera unos segundos.');
+    throw new Error('Google TTS error '+r.status);
+  }
+  return await r.blob();
+}
+
+function playNextGoogleChunk(voiceId, speed, lang, chapterTitle){
+  if(!isCurrentlyReading||_googleChunkIdx>=_googleChunks.length){
+    if(isCurrentlyReading){
+      const session=currentReadSession;
+      if(currentChapter<epubChapters.length-1){
+        currentParaIndex=0;saveParaPosition();
+        currentChapter++;_showChapterSilent(currentChapter);readCurrentChapter();
+      } else {
+        stopBackgroundKeepalive();hideMiniPlayer();
+        const book=books.find(b=>b.epubKey===currentEpubKey);
+        if(book){book.status='read';saveBooks();renderBooks();updateStats();}
+      }
+    }
+    return;
+  }
+  const chunk=_googleChunks[_googleChunkIdx];
+  googleTTSFetch(chunk, lang, 1).then(blob=>{
+    if(!isCurrentlyReading||_googleChunkIdx>=_googleChunks.length) return;
+    const url=URL.createObjectURL(blob);
+    if(!_googleAudio){
+      _googleAudio=new Audio(url);
+      _googleAudio.playbackRate=speed;
+      audioElements['reader']=_googleAudio;
+      miniPlayerAudio=_googleAudio;
+      showMiniPlayer(_googleAudio, chapterTitle);
+      document.getElementById('reader-player-wrap').style.display='block';
+      document.getElementById('reader-play').textContent='⏸';
+    } else {
+      _googleAudio.src=url;
+      _googleAudio.playbackRate=speed;
+      audioElements['reader']=_googleAudio;
+      miniPlayerAudio=_googleAudio;
+    }
+    _googleAudio.play();
+    startPhraseSync(_googleAudio, _googleChunks.length, _googleChunkIdx);
+    _googleAudio.onended=()=>{
+      URL.revokeObjectURL(url);
+      _googleChunkIdx++;
+      playNextGoogleChunk(voiceId, speed, lang, chapterTitle);
+    };
+    _googleAudio.onerror=()=>{
+      URL.revokeObjectURL(url);
+      _googleChunkIdx++;
+      playNextGoogleChunk(voiceId, speed, lang, chapterTitle);
+    };
+  }).catch(e=>{
+    if(isCurrentlyReading) toast('❌ Google TTS: '+e.message);
+    stopReading();
+  });
+}
+
 // ═══════════════════════════════════════════
 //  AUDIO PLAYER (inline)
 // ═══════════════════════════════════════════
@@ -3407,7 +3639,7 @@ async function synthesize(){
     voices=loadWebSpeechVoices();populateVoiceSelects();
     voiceId=document.getElementById('synth-voice').value;
   }
-  if(!voiceId&&currentProvider!=='webspeech'){toast('⚠️ Selecciona una voz primero');return;}
+  if(!voiceId&&currentProvider!=='webspeech'&&currentProvider!=='googletranslate'){toast('⚠️ Selecciona una voz primero');return;}
   const model=PROVIDERS[currentProvider]?.models?.[0]?.id||'';
   const btn=document.getElementById('synth-btn');
   btn.disabled=true;btn.textContent='⏳ Generando…';
@@ -3545,7 +3777,7 @@ function populateVoiceSelects(){
 }
 
 async function loadVoices(){
-  if(!apiKeys[currentProvider]){openApiModal();return;}
+  if(!PROVIDERS[currentProvider]?.noKeyRequired&&!apiKeys[currentProvider]){openApiModal();return;}
   const p=PROVIDERS[currentProvider];
   if(p?.voicesSource==='static'){voices=p.staticVoices||[];renderVoiceGrid();populateVoiceSelects();return;}
   try{
