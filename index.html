@@ -587,10 +587,13 @@ input[type=range]{accent-color:var(--gold);cursor:pointer;width:100%}
     position:fixed;left:0;
     top:0;bottom:0;
     transform:translateX(-100%);
-    z-index:20;
+    z-index:25;
     padding-top:env(safe-area-inset-top);
   }
-  #sidebar.open{transform:translateX(0)}
+  #sidebar.open{transform:translateX(0);pointer-events:auto}
+  #sidebar .sidebar-scroll,
+  #sidebar .sidebar-bottom,
+  #sidebar .sidebar-brand{pointer-events:auto;touch-action:manipulation}
   /* Hamburguesa: más grande y visible */
   .menu-toggle{
     display:flex;
@@ -3391,10 +3394,8 @@ async function ttsRequest(text,voiceId,model){
   }
 
   if(currentProvider==='googletranslate'){
-    const lang=voiceId||'es';
-    const text180=text.replace(/\s+/g,' ').trim().substring(0,180);
-    if(!text180) throw new Error('Texto vacío');
-    return await googleTTSFetch(text180, lang, 1);
+    // Google TTS usa <audio src> directo, no fetch (CORS). Se maneja aparte en synthesize()
+    return null;
   }
 
   const key=apiKeys[currentProvider];
@@ -3524,14 +3525,8 @@ function splitTextChunks(text, maxLen){
   return chunks;
 }
 
-async function googleTTSFetch(text, lang, speed){
-  const url='https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl='+lang+'&ttsspeed='+speed+'&q='+encodeURIComponent(text);
-  const r=await fetch(url);
-  if(!r.ok){
-    if(r.status===429) throw new Error('Google TTS: demasiadas solicitudes. Espera unos segundos.');
-    throw new Error('Google TTS error '+r.status);
-  }
-  return await r.blob();
+function googleTTSUrl(text, lang){
+  return 'https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl='+encodeURIComponent(lang)+'&q='+encodeURIComponent(text);
 }
 
 function playNextGoogleChunk(voiceId, speed, lang, chapterTitle){
@@ -3550,39 +3545,32 @@ function playNextGoogleChunk(voiceId, speed, lang, chapterTitle){
     return;
   }
   const chunk=_googleChunks[_googleChunkIdx];
-  googleTTSFetch(chunk, lang, 1).then(blob=>{
-    if(!isCurrentlyReading||_googleChunkIdx>=_googleChunks.length) return;
-    const url=URL.createObjectURL(blob);
-    if(!_googleAudio){
-      _googleAudio=new Audio(url);
-      _googleAudio.playbackRate=speed;
-      audioElements['reader']=_googleAudio;
-      miniPlayerAudio=_googleAudio;
-      showMiniPlayer(_googleAudio, chapterTitle);
-      document.getElementById('reader-player-wrap').style.display='block';
-      document.getElementById('reader-play').textContent='⏸';
-    } else {
-      _googleAudio.src=url;
-      _googleAudio.playbackRate=speed;
-      audioElements['reader']=_googleAudio;
-      miniPlayerAudio=_googleAudio;
-    }
-    _googleAudio.play();
-    startPhraseSync(_googleAudio, _googleChunks.length, _googleChunkIdx);
-    _googleAudio.onended=()=>{
-      URL.revokeObjectURL(url);
-      _googleChunkIdx++;
-      playNextGoogleChunk(voiceId, speed, lang, chapterTitle);
-    };
-    _googleAudio.onerror=()=>{
-      URL.revokeObjectURL(url);
-      _googleChunkIdx++;
-      playNextGoogleChunk(voiceId, speed, lang, chapterTitle);
-    };
-  }).catch(e=>{
-    if(isCurrentlyReading) toast('❌ Google TTS: '+e.message);
-    stopReading();
-  });
+  const url=googleTTSUrl(chunk, lang);
+  if(!_googleAudio){
+    _googleAudio=new Audio();
+    _googleAudio.playbackRate=speed;
+    audioElements['reader']=_googleAudio;
+    miniPlayerAudio=_googleAudio;
+    showMiniPlayer(_googleAudio, chapterTitle);
+    document.getElementById('reader-player-wrap').style.display='block';
+    document.getElementById('reader-play').textContent='⏸';
+  } else {
+    _googleAudio.src='';
+    _googleAudio.playbackRate=speed;
+    audioElements['reader']=_googleAudio;
+    miniPlayerAudio=_googleAudio;
+  }
+  _googleAudio.src=url;
+  _googleAudio.play();
+  startPhraseSync(_googleAudio, _googleChunks.length, _googleChunkIdx);
+  _googleAudio.onended=()=>{
+    _googleChunkIdx++;
+    playNextGoogleChunk(voiceId, speed, lang, chapterTitle);
+  };
+  _googleAudio.onerror=()=>{
+    _googleChunkIdx++;
+    playNextGoogleChunk(voiceId, speed, lang, chapterTitle);
+  };
 }
 
 // ═══════════════════════════════════════════
@@ -3646,11 +3634,30 @@ async function synthesize(){
   document.getElementById('synth-progress').style.display='block';
   document.getElementById('synth-result').style.display='none';
   try{
-    const blob=await ttsRequest(text,voiceId,model);
-    if(blob!==null){
-      const url=URL.createObjectURL(blob);
-      setupPlayer('synth',url,blob,text.substring(0,30));
+    if(currentProvider==='googletranslate'){
+      const lang=voiceId||'es';
+      const text180=text.replace(/\s+/g,' ').trim().substring(0,180);
+      if(!text180) throw new Error('Texto vacío');
+      const audioUrl=googleTTSUrl(text180, lang);
+      const audio=new Audio(audioUrl);
+      audio.addEventListener('loadedmetadata',()=>{
+        document.getElementById('synth-dur').textContent=fmtTime(audio.duration);
+      });
+      audio.addEventListener('timeupdate',()=>updateProgress('synth',audio));
+      audio.addEventListener('ended',()=>{document.getElementById('synth-play').textContent='▶';});
+      audioElements['synth']=audio;
       document.getElementById('synth-result').style.display='block';
+      const dl=document.getElementById('synth-dl');
+      dl.href=audioUrl;dl.download=text.substring(0,30).replace(/[<>:"/\\|?*]/g,'_')+'.mp3';
+      audio.play();
+      document.getElementById('synth-play').textContent='⏸';
+    } else {
+      const blob=await ttsRequest(text,voiceId,model);
+      if(blob!==null){
+        const url=URL.createObjectURL(blob);
+        setupPlayer('synth',url,blob,text.substring(0,30));
+        document.getElementById('synth-result').style.display='block';
+      }
     }
   }catch(e){
     toast('❌ '+e.message);
