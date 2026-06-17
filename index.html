@@ -2817,66 +2817,19 @@ document.addEventListener('visibilitychange',()=>{
 function startBackgroundKeepalive(){
   window._wlRequested=true;
   requestWakeLock();
-  // 1. Use <audio> element — reliable on iOS PWA
+  // 1. Generar un WAV real con tono apenas audible (el sistema necesita detectar audio)
   if(!_silentAudio){
-    const silentMp3='data:audio/mpeg;base64,SUQzBAAAAAABEVRYWFgAAAAtAAADY29tbWVudABCaW5hcnkgZGF0YSB0byBwbGF5IGEgc2lsZW50IG1wMy4A//uQZAAAAAAAEEcUAAAgYcwAAAEAAAJCeeP/7kGQAAAAAAAEEcUAAAgYcwAAAEAAAJCeeP/7kGQAAAAAAAEEcUAAAgYcwAAAEAAAJCeeP/7kGQAAAAAAAEEcUAAAgYcwAAAEAAAJCeeQ==';
-    _silentAudio=new Audio(silentMp3);
+    const wav=generateToneWAV(150, 0.5, 0.003);
+    const url=URL.createObjectURL(wav);
+    _silentAudio=new Audio(url);
     _silentAudio.loop=true;
-    _silentAudio.volume=0.001;
+    _silentAudio.volume=0.01;
     _silentAudio.setAttribute('playsinline','');
     _silentAudio.setAttribute('webkit-playsinline','');
     _silentAudio.muted=false;
   }
   _silentAudio.play().catch(()=>{});
-  // 2. Oscilador Web Audio + MediaStream -> audio element (Android detecta audio real)
-  //    Necesario para que el SO no suspenda la PWA al salir.
-  //    El evento 'statechange' del AudioContext permite reaccionar al instante cuando
-  //    Chrome suspende el contexto (no depende de timers que se throttlean en background).
-  if(!_bgAudioCtx && !/iPad|iPhone|iPod/i.test(navigator.userAgent)){
-    try{
-      const AC=window.AudioContext||window.webkitAudioContext;
-      _bgAudioCtx=new AC();
-      _bgOsc=_bgAudioCtx.createOscillator();
-      _bgOsc.frequency.value=220;
-      _bgOsc.type='triangle';
-      const g=_bgAudioCtx.createGain();
-      g.gain.value=0.02;
-      _bgOsc.connect(g);
-      // statechange: Chrome suspende el contexto al salir de la app.
-      // Reanudarlo inmediatamente para que el oscilador+stream sigan activos
-      // y el sistema no quite la notificación multimedia.
-      _bgAudioCtx.addEventListener('statechange',()=>{
-        if(_bgAudioCtx?.state==='suspended'){
-          _bgAudioCtx.resume().catch(()=>{});
-          // Reanudar speech synthesis inmediatamente (no esperar al timer throttled)
-          if(window.speechSynthesis?.paused) window.speechSynthesis.resume();
-        }
-      });
-      // Segundo estado: si Chrome detiene el audio silencioso, restart automático
-      _silentAudio.addEventListener('pause',()=>{
-        setTimeout(()=>{
-          if(isCurrentlyReading && _silentAudio?.paused) _silentAudio.play().catch(()=>{});
-        },100);
-      });
-      // Conectar a MediaStream para pasarlo a un <audio> element
-      if(_bgAudioCtx.createMediaStreamDestination){
-        const dest=_bgAudioCtx.createMediaStreamDestination();
-        g.connect(dest);
-        _bgOsc.start();
-        const streamAudio=new Audio();
-        streamAudio.srcObject=dest.stream;
-        streamAudio.loop=true;
-        streamAudio.volume=0;
-        streamAudio.setAttribute('playsinline','');
-        streamAudio.play().catch(()=>{});
-        _bgStreamAudio=streamAudio;
-      } else {
-        g.connect(_bgAudioCtx.destination);
-        _bgOsc.start();
-      }
-    }catch(e){}
-  }
-  // 3. Watchdog: mantener speech + audio vivos (fallback para cuando statechange no basta)
+  // 2. Watchdog: mantener speech + audio vivos
   if(_bgKeepaliveTimer) clearInterval(_bgKeepaliveTimer);
   _bgKeepaliveTimer=setInterval(()=>{
     if(window.speechSynthesis){
@@ -2888,10 +2841,30 @@ function startBackgroundKeepalive(){
       }
     }
     if(_silentAudio && _silentAudio.paused) _silentAudio.play().catch(()=>{});
-    if(_bgAudioCtx && _bgAudioCtx.state==='suspended'){
-      try{_bgAudioCtx.resume();}catch(e){}
-    }
   },3000);
+}
+
+function generateToneWAV(freq, durSec, amp){
+  const sr=44100, ch=1, bits=16;
+  const ns=Math.floor(sr*durSec);
+  const bs=ns*ch*bits/8;
+  const buf=new ArrayBuffer(44+bs);
+  const v=new DataView(buf);
+  const w=(s,o)=>v.setUint32(o,s,true);
+  const w16=(s,o)=>v.setUint16(o,s,true);
+  v.setUint32(0,0x52494646); // RIFF
+  w(36+bs,4);
+  v.setUint32(8,0x57415645); // WAVE
+  v.setUint32(12,0x666D7420); // fmt
+  w16(16,16);w16(20,1);w16(22,ch);w(sr,24);w(sr*ch*bits/8,28);
+  w16(32,ch*bits/8);w16(34,bits);
+  v.setUint32(36,0x64617461); // data
+  w(bs,40);
+  for(let i=0;i<ns;i++){
+    const s=Math.sin(2*Math.PI*freq*i/sr)*amp*32767;
+    v.setInt16(44+i*2,Math.max(-32767,Math.min(32767,Math.round(s))),true);
+  }
+  return new Blob([buf],{type:'audio/wav'});
 }
 
 function stopBackgroundKeepalive(){
@@ -2899,7 +2872,6 @@ function stopBackgroundKeepalive(){
   releaseWakeLock();
   if(_silentAudio){_silentAudio.pause();_silentAudio.currentTime=0;}
   if(_bgKeepaliveTimer){clearInterval(_bgKeepaliveTimer);_bgKeepaliveTimer=null;}
-  // Parar oscilador y stream audio
   if(_bgStreamAudio){_bgStreamAudio.pause();_bgStreamAudio=null;}
   try{if(_bgOsc){_bgOsc.stop();_bgOsc.disconnect();_bgOsc=null;}
       if(_bgAudioCtx){_bgAudioCtx.close();_bgAudioCtx=null;}
@@ -2907,49 +2879,10 @@ function stopBackgroundKeepalive(){
 }
 
 document.addEventListener('visibilitychange',()=>{
-  if(document.hidden){
-    // Al salir: si no hay AudioContext, crearlo (statechange lo mantendrá vivo)
-    if(currentProvider==='webspeech' && isCurrentlyReading && !_bgAudioCtx
-       && !/iPad|iPhone|iPod/i.test(navigator.userAgent)){
-      try{
-        const AC=window.AudioContext||window.webkitAudioContext;
-        _bgAudioCtx=new AC();
-        _bgOsc=_bgAudioCtx.createOscillator();
-        _bgOsc.frequency.value=220;
-        _bgOsc.type='triangle';
-        const g=_bgAudioCtx.createGain();
-        g.gain.value=0.02;
-        _bgOsc.connect(g);
-        _bgAudioCtx.addEventListener('statechange',()=>{
-          if(_bgAudioCtx?.state==='suspended'){
-            _bgAudioCtx.resume().catch(()=>{});
-            if(window.speechSynthesis?.paused) window.speechSynthesis.resume();
-          }
-        });
-        if(_bgAudioCtx.createMediaStreamDestination){
-          const dest=_bgAudioCtx.createMediaStreamDestination();
-          g.connect(dest);
-          _bgOsc.start();
-          const sa=new Audio();
-          sa.srcObject=dest.stream;
-          sa.loop=true;
-          sa.volume=0;
-          sa.setAttribute('playsinline','');
-          sa.play().catch(()=>{});
-          _bgStreamAudio=sa;
-        } else {
-          g.connect(_bgAudioCtx.destination);
-          _bgOsc.start();
-        }
-      }catch(e){}
-    }
-  } else {
+  if(!document.hidden){
     // Al volver a la app
     if(window.speechSynthesis?.paused) window.speechSynthesis.resume();
     if(_silentAudio && _silentAudio.paused) _silentAudio.play().catch(()=>{});
-    if(_bgAudioCtx && _bgAudioCtx.state==='suspended'){
-      try{_bgAudioCtx.resume();}catch(e){}
-    }
   }
 });
 
